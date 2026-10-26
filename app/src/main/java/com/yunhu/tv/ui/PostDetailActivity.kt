@@ -5,6 +5,8 @@ import android.text.InputType
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -66,9 +68,13 @@ class PostDetailActivity : AppCompatActivity() {
                     placeholder(R.drawable.bg_card)
                     error(R.drawable.bg_card)
                 }
-                // Markdown 文章转纯文本阅读
-                binding.tvPostContent.text =
-                    if (post.contentType == 2) MarkdownLite.toPlain(post.content) else post.content
+                // Markdown 文章转纯文本阅读，并提取图片直接显示
+                if (post.contentType == 2) {
+                    binding.tvPostContent.text = MarkdownLite.toPlain(post.content)
+                    showImages(post.content)
+                } else {
+                    binding.tvPostContent.text = post.content
+                }
                 binding.tvPostStats.text =
                     "${ba.name} · 赞 ${post.likeNum} · 评论 ${post.commentNum} · 投币 ${post.amountNum}"
             } catch (e: Exception) {
@@ -85,6 +91,29 @@ class PostDetailActivity : AppCompatActivity() {
                 binding.tvCommentHeader.text = "评论 ($total)"
             } catch (_: Exception) {
             }
+        }
+    }
+
+    /** 把 Markdown 正文里的图片逐张加载到正文下方 */
+    private fun showImages(markdown: String) {
+        val urls = MarkdownLite.extractImages(markdown)
+        if (urls.isEmpty()) return
+        binding.llPostImages.removeAllViews()
+        urls.forEach { url ->
+            val iv = ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = (12 * resources.displayMetrics.density).toInt() }
+                adjustViewBounds = true
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+            iv.load(Api.fullImageUrl(url)) {
+                size(1080, 720)
+                placeholder(R.drawable.bg_card)
+                error(R.drawable.bg_card)
+            }
+            binding.llPostImages.addView(iv)
         }
     }
 

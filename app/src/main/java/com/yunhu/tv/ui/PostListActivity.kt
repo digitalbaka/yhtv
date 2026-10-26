@@ -18,6 +18,8 @@ class PostListActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_BA_ID = "ba_id"
         const val EXTRA_BA_NAME = "ba_name"
+        /** 列表模式：ba-分区文章 mine-我的文章 collect-我的收藏 */
+        const val EXTRA_MODE = "mode"
         private const val PAGE_SIZE = 20
     }
 
@@ -25,6 +27,7 @@ class PostListActivity : AppCompatActivity() {
     private lateinit var postAdapter: PostAdapter
 
     private var baId = 0L
+    private var mode = "ba"
     private var page = 1
     private var total = Int.MAX_VALUE
     private var loading = false
@@ -35,7 +38,12 @@ class PostListActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         baId = intent.getLongExtra(EXTRA_BA_ID, 0)
-        binding.tvTitle.text = intent.getStringExtra(EXTRA_BA_NAME).orEmpty().ifEmpty { "分区 $baId" }
+        mode = intent.getStringExtra(EXTRA_MODE) ?: "ba"
+        binding.tvTitle.text = when (mode) {
+            "mine" -> "我的文章"
+            "collect" -> "我的收藏"
+            else -> intent.getStringExtra(EXTRA_BA_NAME).orEmpty().ifEmpty { "分区 $baId" }
+        }
 
         postAdapter = PostAdapter { post ->
             startActivity(
@@ -63,7 +71,11 @@ class PostListActivity : AppCompatActivity() {
         loading = true
         lifecycleScope.launch {
             try {
-                val (list, t) = Api.postList(baId, PAGE_SIZE, page)
+                val (list, t) = when (mode) {
+                    "mine" -> Api.myPostList(PAGE_SIZE, page)
+                    "collect" -> Api.myCollectList(PAGE_SIZE, page)
+                    else -> Api.postList(baId, PAGE_SIZE, page)
+                }
                 total = t
                 if (page == 1) {
                     postAdapter.submit(list)

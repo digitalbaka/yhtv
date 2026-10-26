@@ -36,6 +36,10 @@ class App : Application() {
                 chain.proceed(newReq)
             }
             .build()
+        // 内置 Emoji 字体：老电视系统缺少 Emoji 字形时也能正常显示
+        androidx.emoji2.bundled.BundledEmojiCompatConfig(this).let {
+            androidx.emoji2.text.EmojiCompat.init(it)
+        }
         // allowRgb565: 电视内存有限，图片解码内存减半，防 OOM 闪退
         Coil.setImageLoader(
             ImageLoader.Builder(this)

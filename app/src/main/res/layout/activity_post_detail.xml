@@ -69,6 +69,13 @@
                 android:textColor="@color/text_primary"
                 android:textSize="17sp" />
 
+            <!-- 正文中的图片 -->
+            <LinearLayout
+                android:id="@+id/ll_post_images"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
             <!-- 统计 -->
             <TextView
                 android:id="@+id/tv_post_stats"

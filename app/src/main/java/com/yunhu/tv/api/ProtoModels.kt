@@ -340,6 +340,46 @@ data class ContactSection(
     }
 }
 
+/** 好友/入群申请（RequestListResponse.Request） */
+data class ApplyRequest(
+    var name: String = "",
+    var avatar: String = "",
+    var groupName: String = "",
+    var groupAvatar: String = "",
+    var targetType: Int = 0,
+    var targetId: String = "",
+    var result: Int = 0,
+    var inviteAtStr: String = "",
+    var requestId: Int = 0,
+    var botName: String = "",
+    var note: String = ""
+) {
+    companion object {
+        fun decode(data: ByteArray): ApplyRequest {
+            val a = ApplyRequest()
+            val r = ProtoReader(data)
+            while (r.hasMore()) {
+                val tag = r.readTag()
+                when (tag ushr 3) {
+                    3 -> a.name = r.readString()
+                    4 -> a.avatar = r.readString()
+                    5 -> a.groupName = r.readString()
+                    6 -> a.groupAvatar = r.readString()
+                    10 -> a.targetType = r.readVarint().toInt()
+                    11 -> a.targetId = r.readString()
+                    13 -> a.result = r.readVarint().toInt()
+                    17 -> a.inviteAtStr = r.readString()
+                    18 -> a.requestId = r.readVarint().toInt()
+                    19 -> a.botName = r.readString()
+                    23 -> a.note = r.readString()
+                    else -> r.skip(tag and 7)
+                }
+            }
+            return a
+        }
+    }
+}
+
 data class StatusInfo(
     var requestId: Long = 0,
     var code: Int = 0,
@@ -540,5 +580,21 @@ object Responses {
             }
         }
         return list to md5
+    }
+
+    /** RequestListResponse: requests=2 repeated, total=3, pending=4 */
+    fun requestList(data: ByteArray): Pair<List<ApplyRequest>, Int> {
+        val r = ProtoReader(data)
+        val list = mutableListOf<ApplyRequest>()
+        var pending = 0
+        while (r.hasMore()) {
+            val tag = r.readTag()
+            when (tag ushr 3) {
+                2 -> list.add(ApplyRequest.decode(r.readBytes()))
+                4 -> pending = r.readVarint().toInt()
+                else -> r.skip(tag and 7)
+            }
+        }
+        return list to pending
     }
 }

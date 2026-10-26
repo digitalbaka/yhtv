@@ -359,4 +359,202 @@ object Api {
         val resp = postJson("$BASE/v1/community/posts/post-like", JSONObject().put("id", postId))
         if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "点赞失败"))
     }
+
+    // ---------- 用户资料 ----------
+
+    /** 修改昵称（proto: EditNicknameRequest name=3） */
+    suspend fun editNickname(name: String) = withContext(Dispatchers.IO) {
+        val w = ProtoWriter()
+        w.string(3, name)
+        val data = postProto("$BASE/v1/user/edit-nickname", w.toByteArray())
+        val st = Responses.status(data)
+        if (st.code != 1) throw ApiException(st.code, if (st.msg.isNotEmpty()) st.msg else "修改昵称失败")
+    }
+
+    data class UserData(
+        val introduction: String,
+        val gender: Int,
+        val birthday: Long,
+        val province: String,
+        val city: String
+    )
+
+    /** 获取个人资料 */
+    suspend fun getUserData(): UserData = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/user/get-user-data", JSONObject())
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取资料失败"))
+        val d = resp.optJSONObject("data")?.optJSONObject("data") ?: JSONObject()
+        UserData(
+            introduction = d.optString("introduction"),
+            gender = d.optInt("gender", 3),
+            birthday = d.optLong("birthday"),
+            province = d.optString("province"),
+            city = d.optString("city")
+        )
+    }
+
+    /** 保存个人资料（简介/性别） */
+    suspend fun saveUserData(introduction: String, gender: Int = 3) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/user/save-user-data",
+            JSONObject().put("introduction", introduction).put("gender", gender)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "保存资料失败"))
+    }
+
+    // ---------- 搜索与申请 ----------
+
+    data class SearchResult(
+        val friendId: String,
+        val friendType: Int,
+        val nickname: String,
+        val name: String,
+        val avatarUrl: String
+    )
+
+    /** 综合搜索（用户/群组/机器人），返回分类标题到结果的映射 */
+    suspend fun homeSearch(word: String): List<Pair<String, List<SearchResult>>> = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/search/home-search", JSONObject().put("word", word))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "搜索失败"))
+        val arr = resp.optJSONObject("data")?.optJSONArray("list") ?: return@withContext emptyList()
+        (0 until arr.length()).mapNotNull { i ->
+            val sec = arr.optJSONObject(i) ?: return@mapNotNull null
+            val items = sec.optJSONArray("list")
+            val results = (0 until (items?.length() ?: 0)).mapNotNull { j ->
+                items?.optJSONObject(j)?.let { o ->
+                    SearchResult(
+                        friendId = o.optString("friendId"),
+                        friendType = o.optInt("friendType"),
+                        nickname = o.optString("nickname"),
+                        name = o.optString("name"),
+                        avatarUrl = o.optString("avatarUrl")
+                    )
+                }
+            }
+            sec.optString("title") to results
+        }
+    }
+
+    /** 申请添加好友/群聊/机器人，remark 为申请理由（可选） */
+    suspend fun friendApply(chatId: String, chatType: Int, remark: String = "") = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/friend/apply",
+            JSONObject().put("chatId", chatId).put("chatType", chatType).put("remark", remark)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "申请失败"))
+    }
+
+    /** 申请列表，返回 (列表, 待处理数) */
+    suspend fun requestList(): Pair<List<ApplyRequest>, Int> = withContext(Dispatchers.IO) {
+        val data = postProto("$BASE/v1/friend/request-list", ByteArray(0))
+        Responses.requestList(data)
+    }
+
+    /** 处理申请。agree: 1-通过 2-拒绝 */
+    suspend fun agreeApply(id: Int, agree: Int) = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/friend/agree-apply", JSONObject().put("id", id).put("agree", agree))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "操作失败"))
+    }
+
+    /** 忽略申请 */
+    suspend fun ignoreApply(id: Int) = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/friend/ignore-apply", JSONObject().put("id", id).put("ignore", 1))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "操作失败"))
+    }
+
+    // ---------- 社区「我的」 ----------
+
+    /** 我的文章 */
+    suspend fun myPostList(size: Int = 20, page: Int = 1): Pair<List<Post>, Int> = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/community/posts/my-post-list", JSONObject().put("size", size).put("page", page))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取文章失败"))
+        val data = resp.optJSONObject("data")
+        val arr = data?.optJSONArray("posts")
+        val list = (0 until (arr?.length() ?: 0)).mapNotNull { arr?.optJSONObject(it)?.toPost() }
+        list to (data?.optInt("total") ?: list.size)
+    }
+
+    /** 我的收藏（post-list typ=2，全站范围 baId=0） */
+    suspend fun myCollectList(size: Int = 20, page: Int = 1): Pair<List<Post>, Int> = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/community/posts/post-list",
+            JSONObject().put("typ", 2).put("baId", 0).put("size", size).put("page", page)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取收藏失败"))
+        val data = resp.optJSONObject("data")
+        val arr = data?.optJSONArray("posts")
+        val list = (0 until (arr?.length() ?: 0)).mapNotNull { arr?.optJSONObject(it)?.toPost() }
+        list to (data?.optInt("total") ?: list.size)
+    }
+
+    data class RewardRecord(
+        val id: Long,
+        val senderId: String,
+        val recvId: String,
+        val amount: Double,
+        val createTime: Long,
+        val reason: String
+    )
+
+    /** 打赏记录（typ: post-文章, comment-评论） */
+    suspend fun rewardRecord(typ: String = "post", size: Int = 20, page: Int = 1): List<RewardRecord> =
+        withContext(Dispatchers.IO) {
+            val resp = postJson(
+                "$BASE/v1/community/reward-record",
+                JSONObject().put("typ", typ).put("size", size).put("page", page)
+            )
+            if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取打赏记录失败"))
+            val arr = resp.optJSONObject("data")?.optJSONArray("rewards") ?: return@withContext emptyList()
+            (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONObject(i)?.let { o ->
+                    RewardRecord(
+                        id = o.optLong("id"),
+                        senderId = o.optString("senderId"),
+                        recvId = o.optString("recvId"),
+                        amount = o.optDouble("amount"),
+                        createTime = o.optLong("createTime"),
+                        reason = o.optString("reason")
+                    )
+                }
+            }
+        }
+
+    data class BlockedUser(
+        val id: Long,
+        val userId: String,
+        val nickname: String,
+        val avatarUrl: String
+    )
+
+    /** 屏蔽用户列表 */
+    suspend fun blackList(size: Int = 50, page: Int = 1): List<BlockedUser> = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/community/black-list", JSONObject().put("size", size).put("page", page))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取屏蔽列表失败"))
+        val arr = resp.optJSONObject("data")?.optJSONArray("list") ?: return@withContext emptyList()
+        (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.let { o ->
+                BlockedUser(
+                    id = o.optLong("id"),
+                    userId = o.optString("user_id"),
+                    nickname = o.optString("nickname"),
+                    avatarUrl = o.optString("avatar_url")
+                )
+            }
+        }
+    }
+
+    /** 屏蔽/取消屏蔽用户。isAdd: 1-屏蔽 0-取消 */
+    suspend fun setBlackList(authorId: String, isAdd: Int) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/community/set-black-list",
+            JSONObject().put("isAdd", isAdd).put("authorId", authorId)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "操作失败"))
+    }
+
+    /** 收藏/取消收藏文章 */
+    suspend fun postCollect(postId: Long) = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/community/posts/post-collect", JSONObject().put("id", postId))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "操作失败"))
+    }
 }

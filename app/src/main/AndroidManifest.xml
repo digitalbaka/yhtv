@@ -49,6 +49,19 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".ui.AddFriendActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ui.RequestListActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.CommunitySimpleListActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.ImageViewActivity"
             android:exported="false"
             android:theme="@style/Theme.YunHuTv.Fullscreen" />

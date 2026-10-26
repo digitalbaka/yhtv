@@ -65,6 +65,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 返回主页时强制全量刷新，避免增量缓存异常卡在「暂无会话」
+        conversationMd5 = ""
         if (::conversationAdapter.isInitialized) refreshConversations()
     }
 
@@ -93,6 +95,34 @@ class MainActivity : AppCompatActivity() {
         binding.rvBas.adapter = baAdapter
         binding.btnBaFollowed.setOnClickListener { switchBaTyp(1) }
         binding.btnBaAll.setOnClickListener { switchBaTyp(4) }
+        binding.btnBaMine.setOnClickListener { switchBaTyp(3) }
+        // 空态或任意时刻按确认键手动刷新会话
+        binding.tvConversationEmpty.setOnClickListener {
+            conversationMd5 = ""
+            refreshConversations()
+        }
+        // 通讯录：添加 / 申请
+        binding.btnAddFriend.setOnClickListener {
+            startActivity(Intent(this, AddFriendActivity::class.java))
+        }
+        binding.btnRequests.setOnClickListener {
+            startActivity(Intent(this, RequestListActivity::class.java))
+        }
+        // 社区「我的」功能入口
+        binding.btnMyPosts.setOnClickListener {
+            startActivity(Intent(this, PostListActivity::class.java).putExtra(PostListActivity.EXTRA_MODE, "mine"))
+        }
+        binding.btnMyCollects.setOnClickListener {
+            startActivity(Intent(this, PostListActivity::class.java).putExtra(PostListActivity.EXTRA_MODE, "collect"))
+        }
+        binding.btnMyRewards.setOnClickListener {
+            startActivity(Intent(this, CommunitySimpleListActivity::class.java).putExtra(CommunitySimpleListActivity.EXTRA_MODE, CommunitySimpleListActivity.MODE_REWARD))
+        }
+        binding.btnMyBlocks.setOnClickListener {
+            startActivity(Intent(this, CommunitySimpleListActivity::class.java).putExtra(CommunitySimpleListActivity.EXTRA_MODE, CommunitySimpleListActivity.MODE_BLOCK))
+        }
+        binding.btnEditNickname.setOnClickListener { showEditNicknameDialog() }
+        binding.btnEditIntro.setOnClickListener { showEditIntroDialog() }
     }
 
     private fun setupTabs() {
@@ -127,6 +157,8 @@ class MainActivity : AppCompatActivity() {
     private fun switchBaTyp(typ: Int) {
         if (baTyp == typ) return
         baTyp = typ
+        // 「我的」模式下显示功能入口行
+        binding.llMineActions.visibility = if (typ == 3) View.VISIBLE else View.GONE
         loadBas()
     }
 
@@ -193,7 +225,64 @@ class MainActivity : AppCompatActivity() {
                 binding.ivMyAvatar.load(info.avatarUrl) { placeholder(R.drawable.bg_card) }
             } catch (_: Exception) {
             }
+            try {
+                val data = Api.getUserData()
+                binding.tvMyIntro.text = if (data.introduction.isNotEmpty()) "简介: ${data.introduction}" else "简介: 未设置"
+            } catch (_: Exception) {
+            }
         }
+    }
+
+    /** 修改昵称对话框 */
+    private fun showEditNicknameDialog() {
+        val input = android.widget.EditText(this).apply {
+            setText(Session.nickname)
+            hint = "输入新昵称"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("修改昵称")
+            .setView(input)
+            .setPositiveButton("保存") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isEmpty()) return@setPositiveButton
+                lifecycleScope.launch {
+                    try {
+                        Api.editNickname(name)
+                        Session.nickname = name
+                        binding.tvMyName.text = name
+                        Toast.makeText(this@MainActivity, "昵称已修改", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(this@MainActivity, "修改失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 修改个人简介对话框 */
+    private fun showEditIntroDialog() {
+        val input = android.widget.EditText(this).apply {
+            hint = "介绍一下自己吧"
+            maxLines = 3
+        }
+        AlertDialog.Builder(this)
+            .setTitle("修改简介")
+            .setView(input)
+            .setPositiveButton("保存") { _, _ ->
+                val intro = input.text.toString().trim()
+                lifecycleScope.launch {
+                    try {
+                        Api.saveUserData(intro)
+                        binding.tvMyIntro.text = if (intro.isNotEmpty()) "简介: $intro" else "简介: 未设置"
+                        Toast.makeText(this@MainActivity, "简介已保存", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(this@MainActivity, "保存失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun openChat(chatId: String, chatType: Int, name: String) {

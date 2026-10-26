@@ -52,4 +52,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil:2.6.0")
+    // 老电视系统字体缺 Emoji 字形，内置 Emoji 字体兼容包
+    implementation("androidx.emoji2:emoji2-bundled:1.4.0")
+    implementation("androidx.emoji2:emoji2-views-helper:1.4.0")
 }
