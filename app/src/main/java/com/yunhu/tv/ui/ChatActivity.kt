@@ -64,8 +64,8 @@ class ChatActivity : AppCompatActivity() {
             if (msg.chatId == chatId) messageAdapter.applyEdit(msg)
         }
 
-        override fun onStream(s: StreamMsg) {
-            if (s.chatId == chatId) messageAdapter.applyStream(s.msgId, s.content)
+        override fun onStream(stream: StreamMsg) {
+            if (stream.chatId == chatId) messageAdapter.applyStream(stream.msgId, stream.content)
         }
 
         override fun onStateChanged(connected: Boolean) {
@@ -158,9 +158,19 @@ class ChatActivity : AppCompatActivity() {
         }
         binding.btnSticker.setOnClickListener { toggleStickerPanel() }
 
-        stickerAdapter = StickerAdapter { sendSticker(it) }
+        stickerAdapter = StickerAdapter(
+            onEmoji = { insertEmoji(it) },
+            onPick = { sendSticker(it) }
+        )
         binding.rvStickers.layoutManager = GridLayoutManager(this, 6)
         binding.rvStickers.adapter = stickerAdapter
+    }
+
+    /** Emoji 插入到输入框光标处 */
+    private fun insertEmoji(ch: String) {
+        val start = binding.etInput.selectionStart.coerceAtLeast(0)
+        binding.etInput.text?.insert(start, ch)
+        binding.etInput.requestFocus()
     }
 
     private fun toggleStickerPanel() {
@@ -174,7 +184,8 @@ class ChatActivity : AppCompatActivity() {
         stickersLoaded = true
         lifecycleScope.launch {
             try {
-                stickerAdapter.submit(Api.expressionList())
+                // 收藏表情为空时面板仍会显示内置 Emoji
+                stickerAdapter.submitFavorites(Api.expressionList())
             } catch (_: Exception) {
                 stickersLoaded = false
             }
@@ -241,7 +252,10 @@ class ChatActivity : AppCompatActivity() {
         val imgUrl = MessageAdapter.imageUrlOf(m)
         if (imgUrl.isNotEmpty()) actions.add("查看图片" to { openImage(imgUrl) })
         if (m.content.text.isNotEmpty()) actions.add("复制文字" to { copyText(m.content.text) })
-        if (MessageAdapter.isOwn(m) && !m.isRecalled && m.msgId.isNotEmpty()) {
+        // 群聊中管理员可撤回他人消息；客户端无法获知权限时提供入口，由服务端鉴权，失败会提示
+        val canRecall = !m.isRecalled && m.msgId.isNotEmpty() &&
+            (MessageAdapter.isOwn(m) || chatType == ChatType.GROUP)
+        if (canRecall) {
             actions.add("撤回" to { recallMsg(m) })
         }
         if (actions.isEmpty()) return

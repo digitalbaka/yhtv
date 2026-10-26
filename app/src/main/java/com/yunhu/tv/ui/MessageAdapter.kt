@@ -24,6 +24,7 @@ class MessageAdapter(
     companion object {
         private const val TYPE_LEFT = 0
         private const val TYPE_RIGHT = 1
+        private const val MAX_MESSAGES = 200
 
         /** 是否为自己发送的消息 */
         fun isOwn(m: ChatMsg): Boolean =
@@ -61,6 +62,11 @@ class MessageAdapter(
     fun append(m: ChatMsg): Boolean {
         if (has(m.msgId)) return false
         items.add(m)
+        // 限制内存中的消息条数，防止长时间使用 OOM 闪退
+        while (items.size > MAX_MESSAGES) {
+            items.removeAt(0)
+            notifyItemRemoved(0)
+        }
         notifyItemInserted(items.size - 1)
         return true
     }
@@ -156,7 +162,13 @@ class MessageAdapter(
     private fun bindContent(h: VH, m: ChatMsg) {
         when (m.contentType) {
             ContentType.TEXT -> showText(h, m.content.text)
-            ContentType.MARKDOWN -> showText(h, MarkdownLite.toPlain(m.content.text))
+            ContentType.MARKDOWN -> {
+                showText(h, MarkdownLite.toPlain(m.content.text))
+                // Markdown 中的图片直接展示，不再只显示 [图片] 占位文本
+                MarkdownLite.extractImages(m.content.text).firstOrNull()?.let {
+                    showImage(h, Api.fullImageUrl(it))
+                }
+            }
             ContentType.HTML -> {
                 h.text.visibility = View.VISIBLE
                 h.text.text = HtmlCompat.fromHtml(m.content.text, HtmlCompat.FROM_HTML_MODE_LEGACY)
@@ -187,7 +199,12 @@ class MessageAdapter(
 
     private fun showImage(h: VH, url: String) {
         h.image.visibility = View.VISIBLE
-        h.image.load(url) { placeholder(R.drawable.bg_card); error(R.drawable.bg_card) }
+        // size() 限制解码尺寸，配合视图上限，降低内存占用
+        h.image.load(url) {
+            size(840, 640)
+            placeholder(R.drawable.bg_card)
+            error(R.drawable.bg_card)
+        }
     }
 
     private fun showFile(h: VH, t: String) {

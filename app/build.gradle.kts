@@ -1,7 +1,14 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+// 每次打包按构建时间自动生成版本号
+val buildStamp: String = SimpleDateFormat("yyMMddHHmm", Locale.US).format(Date())
 
 android {
     namespace = "com.yunhu.tv"
@@ -11,8 +18,9 @@ android {
         applicationId = "com.yunhu.tv"
         minSdk = 23
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        // versionCode 不能超过 Int 上限，去掉年份十位（yMMddHHmm，9 位数字）
+        versionCode = buildStamp.substring(1).toInt()
+        versionName = "1.1.${buildStamp}"
     }
 
     buildTypes {

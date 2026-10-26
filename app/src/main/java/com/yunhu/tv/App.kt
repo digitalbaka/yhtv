@@ -30,12 +30,19 @@ class App : Application() {
                 val host = req.url.host
                 val newReq = if (host.endsWith("jwznb.com")) {
                     req.newBuilder()
-                        .header("Referer", "http://myapp.jwznb.com")
+                        .header("Referer", "https://myapp.jwznb.com")
                         .build()
                 } else req
                 chain.proceed(newReq)
             }
             .build()
-        Coil.setImageLoader(ImageLoader.Builder(this).okHttpClient(client).build())
+        // allowRgb565: 电视内存有限，图片解码内存减半，防 OOM 闪退
+        Coil.setImageLoader(
+            ImageLoader.Builder(this)
+                .okHttpClient(client)
+                .allowRgb565(true)
+                .crossfade(false)
+                .build()
+        )
     }
 }

@@ -20,4 +20,8 @@ object MarkdownLite {
         s = s.replace(Regex("(?m)^\\s*[-*+]\\s+"), "• ")
         return s.trim()
     }
+
+    /** 提取 Markdown 中所有图片地址 ![alt](url) */
+    fun extractImages(src: String): List<String> =
+        Regex("!\\[[^]]*]\\(([^)]+)\\)").findAll(src).map { it.groupValues[1].trim() }.toList()
 }

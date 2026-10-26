@@ -214,4 +214,149 @@ object Api {
         if (url.startsWith("http://") || url.startsWith("https://")) return url
         return IMG_BASE + url
     }
+
+    // ---------- 社区 ----------
+
+    data class Ba(
+        val id: Long,
+        val name: String,
+        val avatar: String,
+        val memberNum: Int,
+        val postNum: Int
+    )
+
+    data class Post(
+        val id: Long,
+        val baId: Long,
+        val senderId: String,
+        val title: String,
+        val content: String,
+        val contentType: Int,
+        val senderNickname: String,
+        val senderAvatar: String,
+        val createTimeText: String,
+        val likeNum: Int,
+        val commentNum: Int,
+        val amountNum: Int
+    )
+
+    data class Comment(
+        val id: Long,
+        val senderId: String,
+        val content: String,
+        val senderNickname: String,
+        val senderAvatar: String,
+        val createTimeText: String,
+        val likeNum: Int,
+        val amountNum: Int
+    )
+
+    private fun JSONObject.toBa() = Ba(
+        id = optLong("id"),
+        name = optString("name"),
+        avatar = optString("avatar"),
+        memberNum = optInt("memberNum"),
+        postNum = optInt("postNum")
+    )
+
+    private fun JSONObject.toPost() = Post(
+        id = optLong("id"),
+        baId = optLong("baId"),
+        senderId = optString("senderId"),
+        title = optString("title"),
+        content = optString("content"),
+        contentType = optInt("contentType"),
+        senderNickname = optString("senderNickname"),
+        senderAvatar = optString("senderAvatar"),
+        createTimeText = optString("createTimeText"),
+        likeNum = optInt("likeNum"),
+        commentNum = optInt("commentNum"),
+        amountNum = optInt("amountNum")
+    )
+
+    /** 分区列表。typ: 1-关注 2-热门 3-我的 4-全部 */
+    suspend fun baList(typ: Int, size: Int = 50, page: Int = 1): List<Ba> = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/community/ba/following-ba-list",
+            JSONObject().put("typ", typ).put("size", size).put("page", page)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取分区失败"))
+        val arr = resp.optJSONObject("data")?.optJSONArray("ba") ?: return@withContext emptyList<Ba>()
+        (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.toBa() }
+    }
+
+    /** 某分区文章列表，返回 (文章, 总数) */
+    suspend fun postList(baId: Long, size: Int = 20, page: Int = 1): Pair<List<Post>, Int> =
+        withContext(Dispatchers.IO) {
+            val resp = postJson(
+                "$BASE/v1/community/posts/post-list",
+                JSONObject().put("typ", 1).put("baId", baId).put("size", size).put("page", page)
+            )
+            if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取文章失败"))
+            val data = resp.optJSONObject("data")
+            val arr = data?.optJSONArray("posts")
+            val list = (0 until (arr?.length() ?: 0)).mapNotNull { arr?.optJSONObject(it)?.toPost() }
+            list to (data?.optInt("total") ?: list.size)
+        }
+
+    /** 文章详情，返回 (文章, 所属分区) */
+    suspend fun postDetail(id: Long): Pair<Post, Ba> = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/community/posts/post-detail", JSONObject().put("id", id))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取文章详情失败"))
+        val data = resp.getJSONObject("data")
+        val post = data.getJSONObject("post").toPost()
+        val ba = data.optJSONObject("ba")?.toBa() ?: Ba(0, "", "", 0, 0)
+        post to ba
+    }
+
+    /** 评论列表，返回 (评论, 总数) */
+    suspend fun commentList(postId: Long, size: Int = 50, page: Int = 1): Pair<List<Comment>, Int> =
+        withContext(Dispatchers.IO) {
+            val resp = postJson(
+                "$BASE/v1/community/comment/comment-list",
+                JSONObject().put("postId", postId).put("size", size).put("page", page)
+            )
+            if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取评论失败"))
+            val data = resp.optJSONObject("data")
+            val arr = data?.optJSONArray("comments")
+            val list = (0 until (arr?.length() ?: 0)).mapNotNull { i ->
+                arr?.optJSONObject(i)?.let { o ->
+                    Comment(
+                        id = o.optLong("id"),
+                        senderId = o.optString("senderId"),
+                        content = o.optString("content"),
+                        senderNickname = o.optString("senderNickname"),
+                        senderAvatar = o.optString("senderAvatar"),
+                        createTimeText = o.optString("createTimeText"),
+                        likeNum = o.optInt("likeNum"),
+                        amountNum = o.optInt("amountNum")
+                    )
+                }
+            }
+            list to (data?.optInt("total") ?: list.size)
+        }
+
+    /** 发表评论。commentId=0 表示直接评论文章 */
+    suspend fun commentPost(postId: Long, content: String, commentId: Long = 0) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/community/comment/comment",
+            JSONObject().put("postId", postId).put("commentId", commentId).put("content", content)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "评论失败"))
+    }
+
+    /** 投币（打赏文章）。recvId 为作者 ID */
+    suspend fun postReward(postId: Long, recvId: String, amount: Double) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/community/posts/post-reward",
+            JSONObject().put("postId", postId).put("recvId", recvId).put("amount", amount)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "投币失败"))
+    }
+
+    /** 点赞/取消点赞文章 */
+    suspend fun postLike(postId: Long) = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/community/posts/post-like", JSONObject().put("id", postId))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "点赞失败"))
+    }
 }

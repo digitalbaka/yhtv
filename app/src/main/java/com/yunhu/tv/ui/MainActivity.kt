@@ -23,14 +23,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var conversationAdapter: ConversationAdapter
     private lateinit var contactAdapter: ContactAdapter
+    private lateinit var baAdapter: BaAdapter
 
     private var conversationMd5 = ""
     private var contactsMd5 = ""
     private var contactsLoaded = false
+    private var baLoaded = false
+    private var baTyp = 1 // 1-关注 4-全部
     private var currentTab = 0
 
     private val wsListener = object : WsClient.Listener {
-        override fun onPush(msg: ChatMsg) = refreshConversations()
+        // 收到推送时强制全量刷新会话（清空 md5），避免增量缓存异常导致列表卡在"暂无会话"
+        override fun onPush(msg: ChatMsg) {
+            conversationMd5 = ""
+            refreshConversations()
+        }
         override fun onStateChanged(connected: Boolean) {
             binding.tvWsState.text = if (connected) "已连接" else "重连中…"
         }
@@ -74,10 +81,22 @@ class MainActivity : AppCompatActivity() {
         }
         binding.rvContacts.layoutManager = LinearLayoutManager(this)
         binding.rvContacts.adapter = contactAdapter
+
+        baAdapter = BaAdapter { ba ->
+            startActivity(
+                Intent(this, PostListActivity::class.java)
+                    .putExtra(PostListActivity.EXTRA_BA_ID, ba.id)
+                    .putExtra(PostListActivity.EXTRA_BA_NAME, ba.name)
+            )
+        }
+        binding.rvBas.layoutManager = LinearLayoutManager(this)
+        binding.rvBas.adapter = baAdapter
+        binding.btnBaFollowed.setOnClickListener { switchBaTyp(1) }
+        binding.btnBaAll.setOnClickListener { switchBaTyp(4) }
     }
 
     private fun setupTabs() {
-        val tabs = listOf(binding.tabConversation, binding.tabContacts, binding.tabMe)
+        val tabs = listOf(binding.tabConversation, binding.tabContacts, binding.tabCommunity, binding.tabMe)
         tabs.forEachIndexed { index, tab ->
             FocusEffects.apply(tab, 1.06f)
             tab.setOnClickListener { switchTab(index) }
@@ -90,10 +109,37 @@ class MainActivity : AppCompatActivity() {
         currentTab = index
         binding.panelConversations.visibility = if (index == 0) View.VISIBLE else View.GONE
         binding.panelContacts.visibility = if (index == 1) View.VISIBLE else View.GONE
-        binding.panelMe.visibility = if (index == 2) View.VISIBLE else View.GONE
+        binding.panelCommunity.visibility = if (index == 2) View.VISIBLE else View.GONE
+        binding.panelMe.visibility = if (index == 3) View.VISIBLE else View.GONE
         when (index) {
             1 -> loadContactsOnce()
-            2 -> loadMe()
+            2 -> loadBaOnce()
+            3 -> loadMe()
+        }
+    }
+
+    private fun loadBaOnce() {
+        if (baLoaded) return
+        baLoaded = true
+        loadBas()
+    }
+
+    private fun switchBaTyp(typ: Int) {
+        if (baTyp == typ) return
+        baTyp = typ
+        loadBas()
+    }
+
+    private fun loadBas() {
+        lifecycleScope.launch {
+            try {
+                val list = Api.baList(baTyp)
+                baAdapter.submit(list)
+                binding.tvBaEmpty.visibility =
+                    if (baAdapter.itemCount == 0) View.VISIBLE else View.GONE
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "版块加载失败: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -101,6 +147,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val (list, md5) = Api.conversationList(conversationMd5)
+                // 服务端在 md5 一致时返回空列表；只有拿到新数据或 md5 变化时才更新界面
                 if (list.isNotEmpty() || md5 != conversationMd5) {
                     conversationMd5 = md5
                     conversationAdapter.submit(list)
@@ -108,6 +155,8 @@ class MainActivity : AppCompatActivity() {
                 binding.tvConversationEmpty.visibility =
                     if (conversationAdapter.itemCount == 0) View.VISIBLE else View.GONE
             } catch (_: Exception) {
+                // 失败时清缓存，下次全量拉取
+                conversationMd5 = ""
             }
         }
     }
