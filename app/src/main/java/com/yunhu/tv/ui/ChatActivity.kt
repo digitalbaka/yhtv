@@ -150,6 +150,7 @@ class ChatActivity : AppCompatActivity() {
     // ---------- 输入与发送 ----------
 
     private fun setupInput() {
+        binding.btnQuoteCancel.setOnClickListener { clearQuote() }
         binding.btnSend.setOnClickListener { sendText() }
         binding.etInput.setOnEditorActionListener { _, actionId, event ->
             val send = actionId == EditorInfo.IME_ACTION_SEND ||
@@ -196,11 +197,18 @@ class ChatActivity : AppCompatActivity() {
         val text = binding.etInput.text.toString().trim()
         if (text.isEmpty()) return
         binding.etInput.setText("")
+        // 引用：带上被引用消息的 msgId，本地回显时附引用摘要
+        val quote = quoteTarget
+        val quoteId = quote?.msgId ?: ""
+        if (quote != null) {
+            clearQuote()
+        }
         lifecycleScope.launch {
             try {
                 val content = MsgContent(text = text)
-                val msgId = Api.sendMessage(chatId, chatType, ContentType.TEXT, content)
-                appendLocal(msgId, ContentType.TEXT, content)
+                if (quote != null) content.quoteMsgText = quotePreview(quote)
+                val msgId = Api.sendMessage(chatId, chatType, ContentType.TEXT, content, quoteId)
+                appendLocal(msgId, ContentType.TEXT, content, quoteId)
             } catch (e: Exception) {
                 toast("发送失败: ${e.message}")
             }
@@ -220,7 +228,7 @@ class ChatActivity : AppCompatActivity() {
     }
 
     /** 发送成功后立即本地插一条（WS 推送到达时按 msgId 去重） */
-    private fun appendLocal(msgId: String, contentType: Int, content: MsgContent) {
+    private fun appendLocal(msgId: String, contentType: Int, content: MsgContent, quoteMsgId: String = "") {
         val m = ChatMsg(
             msgId = msgId,
             sender = Sender(
@@ -233,12 +241,38 @@ class ChatActivity : AppCompatActivity() {
             contentType = contentType,
             content = content,
             sendTimestampMs = System.currentTimeMillis(),
+            quoteMsgId = quoteMsgId,
             chatId = chatId,
             chatType = chatType
         )
         messageAdapter.append(m)
         scrollToBottom()
     }
+
+    // ---------- 引用 ----------
+
+    private var quoteTarget: ChatMsg? = null
+
+    private fun setQuote(m: ChatMsg) {
+        quoteTarget = m
+        binding.tvQuoteText.text = "引用 ${m.sender.name.ifEmpty { "对方" }}: ${quotePreview(m)}"
+        binding.llQuoteBar.visibility = android.view.View.VISIBLE
+    }
+
+    private fun clearQuote() {
+        quoteTarget = null
+        binding.llQuoteBar.visibility = android.view.View.GONE
+    }
+
+    private fun quotePreview(m: ChatMsg): String = when (m.contentType) {
+        ContentType.TEXT, ContentType.HTML -> m.content.text
+        ContentType.MARKDOWN -> com.yunhu.tv.util.MarkdownLite.toPlain(m.content.text)
+        ContentType.IMAGE -> "[图片]"
+        ContentType.STICKER -> "[表情]"
+        ContentType.FILE -> "[文件] ${m.content.fileName}"
+        ContentType.AUDIO -> "[语音]"
+        else -> "[消息]"
+    }.take(50)
 
     // ---------- 消息点击 / 长按 ----------
 
@@ -252,6 +286,16 @@ class ChatActivity : AppCompatActivity() {
         val imgUrl = MessageAdapter.imageUrlOf(m)
         if (imgUrl.isNotEmpty()) actions.add("查看图片" to { openImage(imgUrl) })
         if (m.content.text.isNotEmpty()) actions.add("复制文字" to { copyText(m.content.text) })
+        // 引用（未撤回的消息）
+        if (!m.isRecalled) actions.add("引用" to { setQuote(m) })
+        // 转发到其他会话
+        if (!m.isRecalled) actions.add("转发" to { showForwardDialog(m) })
+        // +1：原样复读该消息到当前会话
+        if (!m.isRecalled) actions.add("+1" to { resendMsg(m) })
+        // 屏蔽用户（仅他人消息）
+        if (!MessageAdapter.isOwn(m) && m.sender.chatId.isNotEmpty()) {
+            actions.add("屏蔽用户" to { confirmBlock(m) })
+        }
         // 群聊中管理员可撤回他人消息；客户端无法获知权限时提供入口，由服务端鉴权，失败会提示
         val canRecall = !m.isRecalled && m.msgId.isNotEmpty() &&
             (MessageAdapter.isOwn(m) || chatType == ChatType.GROUP)
@@ -260,7 +304,68 @@ class ChatActivity : AppCompatActivity() {
         }
         if (actions.isEmpty()) return
         AlertDialog.Builder(this)
+            .setTitle("消息操作")
             .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second.invoke() }
+            .show()
+    }
+
+    /** +1：把这条消息原样发送到当前会话 */
+    private fun resendMsg(m: ChatMsg) {
+        lifecycleScope.launch {
+            try {
+                val msgId = Api.sendMessage(chatId, chatType, m.contentType, m.content)
+                appendLocal(msgId, m.contentType, m.content)
+            } catch (e: Exception) {
+                toast("发送失败: ${e.message}")
+            }
+        }
+    }
+
+    /** 转发：选择目标会话后原样发送 */
+    private fun showForwardDialog(m: ChatMsg) {
+        lifecycleScope.launch {
+            try {
+                val (list, _) = Api.conversationList("")
+                if (list.isEmpty()) { toast("暂无可转发的会话"); return@launch }
+                val names = list.map { it.displayName.ifEmpty { it.chatId } }.toTypedArray()
+                AlertDialog.Builder(this@ChatActivity)
+                    .setTitle("转发到")
+                    .setItems(names) { _, which ->
+                        val target = list[which]
+                        lifecycleScope.launch {
+                            try {
+                                Api.sendMessage(target.chatId, target.chatType, m.contentType, m.content)
+                                toast("已转发到 ${names[which]}")
+                            } catch (e: Exception) {
+                                toast("转发失败: ${e.message}")
+                            }
+                        }
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            } catch (e: Exception) {
+                toast("获取会话失败: ${e.message}")
+            }
+        }
+    }
+
+    /** 屏蔽该用户（社区黑名单，屏蔽其文章/评论） */
+    private fun confirmBlock(m: ChatMsg) {
+        val name = m.sender.name.ifEmpty { m.sender.chatId }
+        AlertDialog.Builder(this)
+            .setTitle("屏蔽用户")
+            .setMessage("确定屏蔽 $name 吗？可在 社区-我的-屏蔽用户 中取消")
+            .setPositiveButton("屏蔽") { _, _ ->
+                lifecycleScope.launch {
+                    try {
+                        Api.setBlackList(m.sender.chatId, 1)
+                        toast("已屏蔽 $name")
+                    } catch (e: Exception) {
+                        toast("屏蔽失败: ${e.message}")
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
             .show()
     }
 

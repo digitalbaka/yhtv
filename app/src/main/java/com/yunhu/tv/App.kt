@@ -44,6 +44,15 @@ class App : Application() {
         Coil.setImageLoader(
             ImageLoader.Builder(this)
                 .okHttpClient(client)
+                .components {
+                    // GIF 动图解码：API28+ 用系统 ImageDecoder，低版本用 GifDecoder；
+                    // 配合 allowRgb565 与按视图尺寸采样，控制动图内存占用
+                    if (android.os.Build.VERSION.SDK_INT >= 28) {
+                        add(coil.decode.ImageDecoderDecoder.Factory())
+                    } else {
+                        add(coil.decode.GifDecoder.Factory())
+                    }
+                }
                 .allowRgb565(true)
                 .crossfade(false)
                 .build()
