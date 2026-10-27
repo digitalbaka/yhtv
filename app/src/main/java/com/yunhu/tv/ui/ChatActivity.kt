@@ -159,8 +159,7 @@ class ChatActivity : AppCompatActivity() {
                 startActivity(Intent(this, GroupSettingsActivity::class.java)
                     .putExtra(GroupSettingsActivity.EXTRA_GROUP_ID, chatId))
             } else {
-                startActivity(Intent(this, UserProfileActivity::class.java)
-                    .putExtra(UserProfileActivity.EXTRA_USER_ID, chatId))
+                openUserProfile(chatId, chatType, chatName, "")
             }
         }
         binding.btnSend.setOnClickListener { sendText() }
@@ -347,9 +346,12 @@ class ChatActivity : AppCompatActivity() {
         val imgUrl = MessageAdapter.imageUrlOf(m)
         if (imgUrl.isNotEmpty()) actions.add("查看图片" to { openImage(imgUrl) })
         if (m.content.text.isNotEmpty()) actions.add("复制文字" to { copyText(m.content.text) })
-        // 查看对方信息（他人消息）
+        // 查看对方信息（他人消息）：把 sender 的 chatType 一起带过去，
+        // 否则机器人会被当成普通用户去查 /v1/user/get-user，详情页全空
         if (!MessageAdapter.isOwn(m) && m.sender.chatId.isNotEmpty()) {
-            actions.add("查看对方信息" to { openUserProfile(m.sender.chatId) })
+            actions.add("查看对方信息" to {
+                openUserProfile(m.sender.chatId, m.sender.chatType, m.sender.name, m.sender.avatarUrl)
+            })
         }
         // 打开 yunhu:// 应用内链接
         val yunhuLink = YunhuRouter.extractYunhuLink(m.content.text)
@@ -454,8 +456,14 @@ class ChatActivity : AppCompatActivity() {
         )
     }
 
-    private fun openUserProfile(userId: String) {
-        startActivity(Intent(this, UserProfileActivity::class.java).putExtra(UserProfileActivity.EXTRA_USER_ID, userId))
+    private fun openUserProfile(userId: String, type: Int, name: String, avatar: String) {
+        startActivity(
+            Intent(this, UserProfileActivity::class.java)
+                .putExtra(UserProfileActivity.EXTRA_USER_ID, userId)
+                .putExtra(UserProfileActivity.EXTRA_CHAT_TYPE, type)
+                .putExtra(UserProfileActivity.EXTRA_NAME, name)
+                .putExtra(UserProfileActivity.EXTRA_AVATAR, avatar)
+        )
     }
 
     private fun copyText(text: String) {

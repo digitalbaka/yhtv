@@ -1,13 +1,11 @@
-package com.yunhu.tv.ui
+﻿package com.yunhu.tv.ui
 
-import android.media.MediaPlayer
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.VideoView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.yunhu.tv.App
@@ -15,19 +13,15 @@ import com.yunhu.tv.databinding.ActivityVideoPlayerBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.ServerSocket
-import java.net.Socket
-import java.nio.charset.StandardCharsets
+import java.io.File
 
 /**
- * 全屏视频播放：本地 HTTP 代理 + VideoView。
- * OkHttpDataSource 在这台老电视上虽然 TLS 通了，但硬解器 profile 不兼容 H.264 High，
- * 且 PlayerView Surface 尺寸异常（1x1）。改用系统 VideoView，通过本地 127.0.0.1 代理
- * 转发视频流（带 Referer 与宽松证书），利用 VideoView/MediaPlayer 内置的硬解 fallback。
+ * 全屏媒体播放：视频 / 音频统一「下载到 cacheDir 再本地播放」。
+ *
+ * 这台电视的 vendor MediaPlayer 直接拒绝 http://127.0.0.1 的 loopback 地址
+ * （setDataSource 后 20ms 就回 -10102，本地代理一条请求都收不到），所以流式代理不可用；
+ * 先落盘成本地文件再交给 VideoView 播放最稳。
  *
  * 遥控器：确定=播放/暂停，左右=快退/快进 10 秒，返回=退出。
  */
@@ -37,13 +31,12 @@ class VideoPlayerActivity : AppCompatActivity() {
         const val EXTRA_URL = "url"
         const val EXTRA_TITLE = "title"
 
-        /** 音频（mp3/语音）标记：本地代理路径用 .mp3，规避部分机型 MIME 嗅探问题 */
+        /** 音频（mp3/语音）标记：下载后用 .mp3 后缀，规避 MIME 嗅探问题 */
         const val EXTRA_IS_AUDIO = "is_audio"
         private const val SEEK_STEP_SEC = 10
     }
 
     private lateinit var binding: ActivityVideoPlayerBinding
-    private var proxy: LocalVideoProxy? = null
     private var videoUrl: String = ""
     private var isAudio: Boolean = false
     private val handler = Handler(Looper.getMainLooper())
@@ -73,7 +66,7 @@ class VideoPlayerActivity : AppCompatActivity() {
         }
 
         setupVideoView()
-        startProxyAndPlay()
+        startPlayback()
     }
 
     private fun setupVideoView() {
@@ -91,47 +84,65 @@ class VideoPlayerActivity : AppCompatActivity() {
         }
     }
 
-    private fun startProxyAndPlay() {
+    private fun startPlayback() {
         lifecycleScope.launch {
             try {
-                if (isAudio) {
-                    // 音频走"下载到缓存再本地播放"：部分老电视 mediaserver 对
-                    // loopback 本地代理返回 -10102，文件播放最稳
-                    downloadAndPlayAudio()
-                } else {
-                    val p = withContext(Dispatchers.IO) {
-                        LocalVideoProxy(App.mediaClient, videoUrl).also { it.start() }
-                    }
-                    proxy = p
-                    binding.videoView.setVideoPath("http://127.0.0.1:${p.port}/video.mp4")
-                    binding.videoView.start()
-                    handler.post(progressTick)
-                }
+                val file = downloadToCache()
+                hideState()
+                binding.videoView.setVideoPath(file.absolutePath)
+                binding.videoView.start()
+                handler.post(progressTick)
             } catch (e: Exception) {
-                showPersistent("启动失败：${e.message}")
+                showPersistent("加载失败：${e.message}")
             }
         }
     }
 
-    /** 音频下载到缓存目录后用 VideoView 播放本地文件 */
-    private suspend fun downloadAndPlayAudio() {
-        showPersistent("加载音频…")
-        val file = withContext(Dispatchers.IO) {
-            val f = java.io.File(cacheDir, "audio_play.bin")
-            val req = okhttp3.Request.Builder().url(videoUrl).get().build()
+    /**
+     * 下载到 cacheDir 后本地播放（视频与音频同一条路径）。
+     * 边下边在 tvState 上刷百分比，避免大视频看起来卡死。
+     */
+    private suspend fun downloadToCache(): File {
+        showPersistent("缓冲中… 0%")
+        return withContext(Dispatchers.IO) {
+            val f = File(cacheDir, "media_play.${extensionOf(videoUrl)}")
+            val req = Request.Builder().url(videoUrl).get().build()
+            var lastPct = -1
+            var totalBytes = 0L
             App.mediaClient.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
-                resp.body?.byteStream()?.use { input ->
-                    f.outputStream().use { output -> input.copyTo(output) }
+                val body = resp.body ?: throw Exception("响应为空")
+                val total = body.contentLength()
+                body.byteStream().use { input ->
+                    f.outputStream().use { output ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n <= 0) break
+                            output.write(buf, 0, n)
+                            totalBytes += n
+                            if (total > 0) {
+                                val pct = (totalBytes * 100 / total).toInt()
+                                if (pct != lastPct) {
+                                    lastPct = pct
+                                    runOnUiThread { binding.tvState.text = "缓冲中… $pct%" }
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            android.util.Log.i("VideoProxy", "audio downloaded: ${f.length()} bytes from $videoUrl")
+            android.util.Log.i("VideoPlayer", "downloaded $totalBytes bytes -> ${f.absolutePath}")
             f
         }
-        hideState()
-        binding.videoView.setVideoPath(file.absolutePath)
-        binding.videoView.start()
-        handler.post(progressTick)
+    }
+
+    /** 从 URL 推断容器后缀，MediaPlayer 更愿意按后缀选解析器 */
+    private fun extensionOf(url: String): String {
+        val path = url.substringBefore('?').substringAfterLast('/')
+        val ext = path.substringAfterLast('.', "").lowercase()
+        if (ext.isNotEmpty() && ext.length <= 5 && ext.all { it.isLetterOrDigit() }) return ext
+        return if (isAudio) "mp3" else "mp4"
     }
 
     private fun updateProgress() {
@@ -209,95 +220,6 @@ class VideoPlayerActivity : AppCompatActivity() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         try { binding.videoView.stopPlayback() } catch (_: Exception) {}
-        proxy?.stop()
         super.onDestroy()
-    }
-}
-
-/**
- * 本地 HTTP 代理：单客户端单连接，仅处理最基本的 GET（含 Range）。
- * 收到请求后用共享 OkHttpClient 转发到真实 URL，响应逐字节写回 socket。
- */
-private class LocalVideoProxy(
-    private val client: OkHttpClient,
-    private val targetUrl: String
-) {
-    @Volatile private var server: ServerSocket? = null
-    val port: Int get() = server?.localPort ?: 0
-
-    fun start() {
-        server = ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())
-        Thread {
-            val ss = server ?: return@Thread
-            try {
-                while (!ss.isClosed) {
-                    val clientSocket = try { ss.accept() } catch (_: Exception) { break }
-                    try { handle(clientSocket) } catch (_: Exception) {}
-                    try { clientSocket.close() } catch (_: Exception) {}
-                }
-            } catch (_: Exception) {}
-        }.start()
-    }
-
-    fun stop() {
-        try { server?.close() } catch (_: Exception) {}
-        server = null
-    }
-
-    private fun handle(socket: Socket) {
-        val input = BufferedReader(InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII))
-        val first = input.readLine() ?: return
-        android.util.Log.i("VideoProxy", "req: $first -> $targetUrl")
-        val parts = first.split(" ")
-        if (parts.size < 2 || parts[0] != "GET") { writeError(socket, 400, "Bad Request"); return }
-
-        val reqBuilder = Request.Builder().url(targetUrl).get()
-        var rangeHeader: String? = null
-        var line: String?
-        while (input.readLine().also { line = it } != null && line!!.isNotEmpty()) {
-            val idx = line!!.indexOf(':')
-            if (idx > 0) {
-                val key = line!!.substring(0, idx).trim()
-                val valV = line!!.substring(idx + 1).trim()
-                if (key.equals("Range", ignoreCase = true)) rangeHeader = valV
-            }
-        }
-        rangeHeader?.let { reqBuilder.header("Range", it) }
-
-        val resp = client.newCall(reqBuilder.build()).execute()
-        android.util.Log.i(
-            "VideoProxy",
-            "resp: code=${resp.code} type=${resp.header("Content-Type")} len=${resp.header("Content-Length")} range=${resp.header("Content-Range")}"
-        )
-        val out = socket.getOutputStream()
-
-        val sb = StringBuilder()
-        sb.append("HTTP/1.1 ${resp.code} ${resp.message}").append("\r\n")
-        sb.append("Content-Type: ${resp.header("Content-Type", "video/mp4")}").append("\r\n")
-        resp.header("Content-Length")?.let { sb.append("Content-Length: $it").append("\r\n") }
-        resp.header("Content-Range")?.let { sb.append("Content-Range: $it").append("\r\n") }
-        sb.append("Accept-Ranges: bytes").append("\r\n")
-        sb.append("Cache-Control: no-store").append("\r\n")
-        sb.append("Connection: close").append("\r\n")
-        sb.append("\r\n")
-        out.write(sb.toString().toByteArray(StandardCharsets.US_ASCII))
-
-        resp.body?.byteStream()?.use { body ->
-            val buf = ByteArray(64 * 1024)
-            while (true) {
-                val r = body.read(buf)
-                if (r <= 0) break
-                out.write(buf, 0, r)
-            }
-        }
-        out.flush()
-    }
-
-    private fun writeError(socket: Socket, code: Int, msg: String) {
-        try {
-            val body = "HTTP/1.1 $code $msg\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-            socket.getOutputStream().write(body.toByteArray(StandardCharsets.US_ASCII))
-            socket.getOutputStream().flush()
-        } catch (_: Exception) {}
     }
 }
