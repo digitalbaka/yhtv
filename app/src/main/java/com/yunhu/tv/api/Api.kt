@@ -237,7 +237,12 @@ object Api {
         val createTimeText: String,
         val likeNum: Int,
         val commentNum: Int,
-        val amountNum: Int
+        val amountNum: Int,
+        val collectNum: Int = 0,
+        /** 我是否已点赞：0 未赞 1 已赞 */
+        val isLiked: Int = 0,
+        /** 我是否已收藏：0 未收藏 1 已收藏 */
+        val isCollected: Int = 0
     )
 
     data class Comment(
@@ -272,7 +277,10 @@ object Api {
         createTimeText = optString("createTimeText"),
         likeNum = optInt("likeNum"),
         commentNum = optInt("commentNum"),
-        amountNum = optInt("amountNum")
+        amountNum = optInt("amountNum"),
+        collectNum = optInt("collectNum"),
+        isLiked = optInt("isLiked"),
+        isCollected = optInt("isCollected")
     )
 
     /** 分区列表。typ: 1-关注 2-热门 3-我的 4-全部 */
@@ -362,10 +370,16 @@ object Api {
         if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "投币失败"))
     }
 
-    /** 点赞/取消点赞文章 */
+    /** 点赞/取消点赞文章（toggle） */
     suspend fun postLike(postId: Long) = withContext(Dispatchers.IO) {
         val resp = postJson("$BASE/v1/community/posts/post-like", JSONObject().put("id", postId))
         if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "点赞失败"))
+    }
+
+    /** 收藏/取消收藏文章（toggle） */
+    suspend fun postCollect(postId: Long) = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/community/posts/post-collect", JSONObject().put("id", postId))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "收藏失败"))
     }
 
     // ---------- 用户资料 ----------
@@ -417,7 +431,9 @@ object Api {
         val friendType: Int,
         val nickname: String,
         val name: String,
-        val avatarUrl: String
+        val avatarUrl: String,
+        /** 机器人/群组是否可直接添加（无需审核） */
+        val alwaysAgree: Boolean = false
     )
 
     /** 综合搜索（用户/群组/机器人），返回分类标题到结果的映射 */
@@ -435,7 +451,9 @@ object Api {
                         friendType = o.optInt("friendType"),
                         nickname = o.optString("nickname"),
                         name = o.optString("name"),
-                        avatarUrl = o.optString("avatarUrl")
+                        avatarUrl = o.optString("avatarUrl"),
+                        // 该字段可能是布尔值也可能是 0/1
+                        alwaysAgree = o.optBoolean("alwaysAgree", false) || o.optInt("alwaysAgree", 0) != 0
                     )
                 }
             }
@@ -557,12 +575,6 @@ object Api {
             "$BASE/v1/community/set-black-list",
             JSONObject().put("isAdd", isAdd).put("authorId", authorId)
         )
-        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "操作失败"))
-    }
-
-    /** 收藏/取消收藏文章 */
-    suspend fun postCollect(postId: Long) = withContext(Dispatchers.IO) {
-        val resp = postJson("$BASE/v1/community/posts/post-collect", JSONObject().put("id", postId))
         if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "操作失败"))
     }
 

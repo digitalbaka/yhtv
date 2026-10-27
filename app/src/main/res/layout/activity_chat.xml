@@ -58,14 +58,78 @@
         android:clipToPadding="false"
         android:padding="14dp" />
 
-    <!-- 表情面板 -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rv_stickers"
+    <!-- 表情面板：上方 Tab（Emoji / 收藏表情），下方网格 -->
+    <LinearLayout
+        android:id="@+id/panel_stickers"
         android:layout_width="match_parent"
-        android:layout_height="240dp"
+        android:layout_height="wrap_content"
         android:background="@color/panel"
-        android:padding="8dp"
-        android:visibility="gone" />
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <!-- Tab 行 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="12dp">
+
+            <TextView
+                android:id="@+id/tab_emoji"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_tab_focus"
+                android:focusable="true"
+                android:paddingStart="16dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="8dp"
+                android:text="Emoji"
+                android:textColor="@color/accent"
+                android:textSize="15sp" />
+
+            <TextView
+                android:id="@+id/tab_fav"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:background="@drawable/bg_tab_focus"
+                android:focusable="true"
+                android:paddingStart="16dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="8dp"
+                android:text="收藏表情"
+                android:textColor="@color/text_secondary"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/panel_focus" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rv_stickers"
+                android:layout_width="match_parent"
+                android:layout_height="200dp"
+                android:padding="6dp" />
+
+            <TextView
+                android:id="@+id/tv_sticker_empty"
+                android:layout_width="match_parent"
+                android:layout_height="200dp"
+                android:gravity="center"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp"
+                android:visibility="gone" />
+        </FrameLayout>
+    </LinearLayout>
 
     <View
         android:layout_width="match_parent"

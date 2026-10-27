@@ -11,7 +11,8 @@ import com.yunhu.tv.R
 import com.yunhu.tv.api.Api
 
 /**
- * 表情面板：常用 Emoji（点击插入输入框）+ 个人收藏表情（点击直接发送）。
+ * 表情面板：Emoji Tab（点击插入输入框）+ 收藏表情 Tab（点击直接发送）。
+ * 两个 Tab 各自独立数据源，由 ChatActivity 切换 Tab 时调用 setTab()。
  */
 class StickerAdapter(
     private val onEmoji: (String) -> Unit,
@@ -30,24 +31,31 @@ class StickerAdapter(
             "👌", "❤️", "💔", "🎉", "🎂", "🔥", "⭐", "🌹",
             "🍉", "🍺", "☕", "🐶", "🐱", "🐭", "🐮", "🐷"
         )
+
+        const val TAB_EMOJI = 0
+        const val TAB_FAV = 1
     }
 
-    sealed class Row {
-        data class Emoji(val ch: String) : Row()
-        data class Fav(val exp: Api.Expression) : Row()
+    private var currentTab = TAB_EMOJI
+    private val favList = mutableListOf<Api.Expression>()
+
+    /** 当前激活的 Tab（供外部在刷新收藏数据时复用） */
+    fun currentTab(): Int = currentTab
+
+    /** Tab 切换后刷新列表；返回是否为空（ChatActivity 据此显示空占位） */
+    fun setTab(tab: Int): Boolean {
+        if (currentTab != tab) {
+            currentTab = tab
+            notifyDataSetChanged()
+        }
+        return itemCount == 0
     }
 
-    private val rows = mutableListOf<Row>()
-
-    init {
-        COMMON_EMOJI.forEach { rows.add(Row.Emoji(it)) }
-    }
-
-    /** 追加个人收藏表情 */
+    /** 追加个人收藏表情（Fav Tab 的数据源） */
     fun submitFavorites(list: List<Api.Expression>) {
-        rows.removeAll { it is Row.Fav }
-        list.forEach { rows.add(Row.Fav(it)) }
-        notifyDataSetChanged()
+        favList.clear()
+        favList.addAll(list)
+        if (currentTab == TAB_FAV) notifyDataSetChanged()
     }
 
     class EmojiVH(view: View) : RecyclerView.ViewHolder(view) {
@@ -59,7 +67,7 @@ class StickerAdapter(
     }
 
     override fun getItemViewType(position: Int): Int =
-        if (rows[position] is Row.Emoji) TYPE_EMOJI else TYPE_FAV
+        if (currentTab == TAB_EMOJI) TYPE_EMOJI else TYPE_FAV
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val inf = LayoutInflater.from(parent.context)
@@ -70,21 +78,21 @@ class StickerAdapter(
         }
     }
 
-    override fun getItemCount() = rows.size
+    override fun getItemCount(): Int = if (currentTab == TAB_EMOJI) COMMON_EMOJI.size else favList.size
 
     override fun onBindViewHolder(h: RecyclerView.ViewHolder, position: Int) {
-        when (val row = rows[position]) {
-            is Row.Emoji -> {
-                (h as EmojiVH).emoji.text = row.ch
-                h.itemView.setOnClickListener { onEmoji(row.ch) }
+        if (currentTab == TAB_EMOJI) {
+            val vh = h as EmojiVH
+            vh.emoji.text = COMMON_EMOJI[position]
+            h.itemView.setOnClickListener { onEmoji(COMMON_EMOJI[position]) }
+        } else {
+            val exp = favList[position]
+            val vh = h as FavVH
+            vh.img.load(Api.fullImageUrl(exp.url)) {
+                placeholder(R.drawable.bg_card)
+                error(R.drawable.bg_card)
             }
-            is Row.Fav -> {
-                (h as FavVH).img.load(Api.fullImageUrl(row.exp.url)) {
-                    placeholder(R.drawable.bg_card)
-                    error(R.drawable.bg_card)
-                }
-                h.itemView.setOnClickListener { onPick(row.exp) }
-            }
+            h.itemView.setOnClickListener { onPick(exp) }
         }
         FocusEffects.apply(h.itemView, 1.12f)
     }

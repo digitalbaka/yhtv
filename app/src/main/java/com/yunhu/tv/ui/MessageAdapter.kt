@@ -37,6 +37,13 @@ class MessageAdapter(
             ContentType.STICKER -> Api.fullImageUrl(m.content.image)
             else -> ""
         }
+
+        /** 视频消息的直链地址，非视频类返回空串 */
+        fun videoUrlOf(m: ChatMsg): String =
+            if (m.contentType == ContentType.VIDEO) Api.fullImageUrl(m.content.videoUrl) else ""
+
+        fun durationText(seconds: Int): String =
+            if (seconds <= 0) "" else "%02d:%02d".format(seconds / 60, seconds % 60)
     }
 
     private val items = mutableListOf<ChatMsg>()
@@ -109,6 +116,9 @@ class MessageAdapter(
         val text: TextView = view.findViewById(R.id.tv_text)
         val image: ImageView = view.findViewById(R.id.iv_image)
         val fileCard: TextView = view.findViewById(R.id.tv_file_card)
+        val videoCard: View = view.findViewById(R.id.ll_video_card)
+        val videoTitle: TextView = view.findViewById(R.id.tv_video_title)
+        val videoSub: TextView = view.findViewById(R.id.tv_video_sub)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -126,6 +136,7 @@ class MessageAdapter(
         h.text.visibility = View.GONE
         h.image.visibility = View.GONE
         h.fileCard.visibility = View.GONE
+        h.videoCard.visibility = View.GONE
         h.quote.visibility = View.GONE
         h.text.text = ""
         h.text.setTextColor(ContextCompat.getColor(h.itemView.context, R.color.text_primary))
@@ -190,6 +201,7 @@ class MessageAdapter(
                 if (m.content.videoUrl.isNotEmpty()) "[视频] ${m.content.fileName}"
                 else "[文件] ${m.content.fileName}\n${formatSize(m.content.fileSize)}"
             )
+            ContentType.VIDEO -> showVideo(h, m)
             ContentType.AUDIO -> showFile(h, "[语音] ${m.content.audioTime} 秒")
             ContentType.CALL -> showFile(h, "[通话] ${m.content.callStatusText.ifEmpty { "语音通话" }}")
             ContentType.FORM -> showText(h, "[表单消息，请在手机端查看]")
@@ -212,6 +224,14 @@ class MessageAdapter(
             placeholder(R.drawable.bg_card)
             error(R.drawable.bg_card)
         }
+    }
+
+    /** 视频卡片：▶ 图标 + 标题 + 时长，点按进入播放页 */
+    private fun showVideo(h: VH, m: ChatMsg) {
+        h.videoCard.visibility = View.VISIBLE
+        h.videoTitle.text = m.content.fileName.ifEmpty { "视频" }
+        val dur = durationText(m.content.videoTime)
+        h.videoSub.text = if (dur.isEmpty()) "点按播放" else "时长 $dur · 点按播放"
     }
 
     private fun showFile(h: VH, t: String) {

@@ -126,6 +126,7 @@ class AddFriendActivity : AppCompatActivity() {
                 .putExtra(UserProfileActivity.EXTRA_CHAT_TYPE, r.friendType)
                 .putExtra(UserProfileActivity.EXTRA_NAME, r.nickname.ifEmpty { r.name })
                 .putExtra(UserProfileActivity.EXTRA_AVATAR, r.avatarUrl)
+                .putExtra(UserProfileActivity.EXTRA_ALWAYS_AGREE, r.alwaysAgree)
         )
     }
 }

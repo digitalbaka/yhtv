@@ -9,11 +9,13 @@ import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.yunhu.tv.App
+import com.yunhu.tv.R
 import com.yunhu.tv.api.Api
 import com.yunhu.tv.api.ChatMsg
 import com.yunhu.tv.api.ChatType
@@ -175,6 +177,10 @@ class ChatActivity : AppCompatActivity() {
         )
         binding.rvStickers.layoutManager = GridLayoutManager(this, 6)
         binding.rvStickers.adapter = stickerAdapter
+
+        // Tab 切换：遥控器 D-pad 或点击确定键都可切
+        binding.tabEmoji.setOnClickListener { switchStickerTab(StickerAdapter.TAB_EMOJI) }
+        binding.tabFav.setOnClickListener { switchStickerTab(StickerAdapter.TAB_FAV) }
     }
 
     /** Emoji 插入到输入框光标处 */
@@ -185,9 +191,38 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun toggleStickerPanel() {
-        val show = binding.rvStickers.visibility != android.view.View.VISIBLE
-        binding.rvStickers.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
-        if (show) loadStickersOnce()
+        val show = binding.panelStickers.visibility != android.view.View.VISIBLE
+        binding.panelStickers.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+        if (show) {
+            loadStickersOnce()
+            // 默认回到 Emoji Tab 并把焦点送进 RecyclerView
+            switchStickerTab(StickerAdapter.TAB_EMOJI, moveFocus = true)
+        }
+    }
+
+    /** 切换表情面板 Tab，同步按钮选中态和空占位 */
+    private fun switchStickerTab(tab: Int, moveFocus: Boolean = false) {
+        val empty = stickerAdapter.setTab(tab)
+        binding.tabEmoji.isSelected = tab == StickerAdapter.TAB_EMOJI
+        binding.tabFav.isSelected = tab == StickerAdapter.TAB_FAV
+        binding.tabEmoji.setTextColor(
+            ContextCompat.getColor(this, if (tab == StickerAdapter.TAB_EMOJI) R.color.accent else R.color.text_secondary)
+        )
+        binding.tabFav.setTextColor(
+            ContextCompat.getColor(this, if (tab == StickerAdapter.TAB_FAV) R.color.accent else R.color.text_secondary)
+        )
+        refreshStickerEmpty(tab, empty)
+        if (moveFocus) binding.rvStickers.requestFocus()
+    }
+
+    private fun refreshStickerEmpty(tab: Int, empty: Boolean) {
+        if (!empty) {
+            binding.tvStickerEmpty.visibility = android.view.View.GONE
+            return
+        }
+        binding.tvStickerEmpty.visibility = android.view.View.VISIBLE
+        binding.tvStickerEmpty.text =
+            if (tab == StickerAdapter.TAB_FAV) "还没有收藏表情" else "(Emoji 面板为空)"
     }
 
     private fun loadStickersOnce() {
@@ -195,8 +230,12 @@ class ChatActivity : AppCompatActivity() {
         stickersLoaded = true
         lifecycleScope.launch {
             try {
-                // 收藏表情为空时面板仍会显示内置 Emoji
-                stickerAdapter.submitFavorites(Api.expressionList())
+                val list = Api.expressionList()
+                stickerAdapter.submitFavorites(list)
+                // 如果收藏 Tab 正处于激活态，刷新空占位
+                if (stickerAdapter.currentTab() == StickerAdapter.TAB_FAV && binding.panelStickers.isShown) {
+                    switchStickerTab(StickerAdapter.TAB_FAV)
+                }
             } catch (_: Exception) {
                 stickersLoaded = false
             }
@@ -280,6 +319,7 @@ class ChatActivity : AppCompatActivity() {
         ContentType.IMAGE -> "[图片]"
         ContentType.STICKER -> "[表情]"
         ContentType.FILE -> "[文件] ${m.content.fileName}"
+        ContentType.VIDEO -> "[视频]"
         ContentType.AUDIO -> "[语音]"
         else -> "[消息]"
     }.take(50)
@@ -287,8 +327,10 @@ class ChatActivity : AppCompatActivity() {
     // ---------- 消息点击 / 长按 ----------
 
     private fun onMsgClick(m: ChatMsg) {
-        val url = MessageAdapter.imageUrlOf(m)
-        if (url.isNotEmpty()) openImage(url)
+        val img = MessageAdapter.imageUrlOf(m)
+        if (img.isNotEmpty()) { openImage(img); return }
+        val video = MessageAdapter.videoUrlOf(m)
+        if (video.isNotEmpty()) openVideo(video)
     }
 
     private fun onMsgLongClick(m: ChatMsg) {
@@ -392,6 +434,14 @@ class ChatActivity : AppCompatActivity() {
 
     private fun openImage(url: String) {
         startActivity(Intent(this, ImageViewActivity::class.java).putExtra(ImageViewActivity.EXTRA_URL, url))
+    }
+
+    private fun openVideo(url: String) {
+        startActivity(
+            Intent(this, VideoPlayerActivity::class.java)
+                .putExtra(VideoPlayerActivity.EXTRA_URL, url)
+                .putExtra(VideoPlayerActivity.EXTRA_TITLE, chatName)
+        )
     }
 
     private fun openUserProfile(userId: String) {

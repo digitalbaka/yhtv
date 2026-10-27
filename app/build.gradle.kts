@@ -54,6 +54,10 @@ dependencies {
     implementation("io.coil-kt:coil:2.6.0")
     // GIF 动图解码（头像/表情）
     implementation("io.coil-kt:coil-gif:2.6.0")
+    // 视频播放：ExoPlayer 流式播放，OkHttp 数据源复用带 Referer/证书放行的客户端
+    implementation("androidx.media3:media3-exoplayer:1.2.1")
+    implementation("androidx.media3:media3-ui:1.2.1")
+    implementation("androidx.media3:media3-datasource-okhttp:1.2.1")
     // 老电视系统字体缺 Emoji 字形，内置 Emoji 字体兼容包
     implementation("androidx.emoji2:emoji2-bundled:1.4.0")
     implementation("androidx.emoji2:emoji2-views-helper:1.4.0")

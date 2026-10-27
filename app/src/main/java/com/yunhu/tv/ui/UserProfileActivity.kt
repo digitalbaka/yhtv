@@ -28,6 +28,7 @@ class UserProfileActivity : AppCompatActivity() {
         const val EXTRA_CHAT_TYPE = "chat_type"
         const val EXTRA_NAME = "name"
         const val EXTRA_AVATAR = "avatar"
+        const val EXTRA_ALWAYS_AGREE = "always_agree"
     }
 
     private lateinit var binding: ActivityUserProfileBinding
@@ -35,6 +36,7 @@ class UserProfileActivity : AppCompatActivity() {
     private var chatType = ChatType.USER
     private var presetName = ""
     private var presetAvatar = ""
+    private var alwaysAgree = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,6 +47,7 @@ class UserProfileActivity : AppCompatActivity() {
         chatType = intent.getIntExtra(EXTRA_CHAT_TYPE, ChatType.USER)
         presetName = intent.getStringExtra(EXTRA_NAME).orEmpty()
         presetAvatar = intent.getStringExtra(EXTRA_AVATAR).orEmpty()
+        alwaysAgree = intent.getBooleanExtra(EXTRA_ALWAYS_AGREE, false)
         if (userId.isEmpty()) { finish(); return }
 
         // 标题随类型变化
@@ -100,24 +103,28 @@ class UserProfileActivity : AppCompatActivity() {
         }
     }
 
-    /** 机器人没有独立详情接口，直接展示搜索结果中的基础信息 */
+    /** 机器人没有独立详情接口，用搜索结果中的基础信息展示 */
     private fun loadBot() {
-        binding.ivAvatar.load(presetAvatar) { placeholder(R.drawable.bg_card); error(R.drawable.bg_card) }
+        binding.ivAvatar.load(Api.fullImageUrl(presetAvatar)) { placeholder(R.drawable.bg_card); error(R.drawable.bg_card) }
         binding.tvName.text = presetName.ifEmpty { "机器人 $userId" }
         binding.tvId.text = "ID: $userId"
-        binding.tvVip.visibility = View.GONE
-        binding.tvIntroduction.text = "机器人"
-        binding.tvGender.text = ""
-        binding.tvBirthday.text = ""
-        binding.tvCity.text = ""
-        binding.tvRegister.text = ""
-        binding.tvOnline.text = ""
-        binding.tvIp.text = ""
+        binding.tvVip.text = "机器人"
+        binding.tvVip.visibility = View.VISIBLE
+        binding.tvIntroduction.text = "该机器人由开发者提供，TV 端暂无法获取更多资料"
+        // 空字段直接隐藏，避免详情页出现多条空行
+        binding.tvGender.visibility = View.GONE
+        binding.tvBirthday.text = "添加方式: " + if (alwaysAgree) "直接添加" else "需审核"
+        binding.tvBirthday.visibility = View.VISIBLE
+        binding.tvCity.visibility = View.GONE
+        binding.divStats.visibility = View.GONE
+        binding.tvRegister.visibility = View.GONE
+        binding.tvOnline.visibility = View.GONE
+        binding.tvIp.visibility = View.GONE
     }
 
     private suspend fun loadUser() {
         val u = Api.getUser(userId)
-        binding.ivAvatar.load(u.avatarUrl) { placeholder(R.drawable.bg_card); error(R.drawable.bg_card) }
+        binding.ivAvatar.load(Api.fullImageUrl(u.avatarUrl)) { placeholder(R.drawable.bg_card); error(R.drawable.bg_card) }
         binding.tvName.text = u.name.ifEmpty { "用户 $userId" }
         binding.tvId.text = "ID: ${u.id.ifEmpty { userId }}"
         binding.tvVip.visibility = if (u.isVip) View.VISIBLE else View.GONE
@@ -139,7 +146,7 @@ class UserProfileActivity : AppCompatActivity() {
 
     private suspend fun loadGroup() {
         val g = Api.groupInfo(userId)
-        binding.ivAvatar.load(g.avatarUrl) { placeholder(R.drawable.bg_card); error(R.drawable.bg_card) }
+        binding.ivAvatar.load(Api.fullImageUrl(g.avatarUrl)) { placeholder(R.drawable.bg_card); error(R.drawable.bg_card) }
         binding.tvName.text = g.name.ifEmpty { "群组 $userId" }
         binding.tvId.text = "ID: ${g.groupId.ifEmpty { userId }}"
         binding.tvVip.visibility = View.GONE

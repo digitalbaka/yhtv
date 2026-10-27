@@ -57,7 +57,7 @@ class SearchResultAdapter(
                 val vh = h as ItemVH
                 val r = row.result
                 vh.name.text = r.nickname.ifEmpty { r.name }.ifEmpty { r.friendId }
-                vh.avatar.load(r.avatarUrl) { placeholder(R.drawable.bg_card); error(R.drawable.bg_card) }
+                vh.avatar.load(Api.fullImageUrl(r.avatarUrl)) { placeholder(R.drawable.bg_card); error(R.drawable.bg_card) }
                 vh.itemView.setOnClickListener { onClick(r) }
                 FocusEffects.apply(vh.itemView)
             }

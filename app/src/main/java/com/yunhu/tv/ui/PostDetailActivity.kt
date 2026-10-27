@@ -31,6 +31,8 @@ class PostDetailActivity : AppCompatActivity() {
 
     private var postId = 0L
     private var authorId = ""
+    /** 详情接口返回的最新 Post（带 isLiked/isCollected 状态） */
+    private var currentPost: Api.Post? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,6 +48,7 @@ class PostDetailActivity : AppCompatActivity() {
         binding.rvComments.adapter = commentAdapter
 
         binding.btnLike.setOnClickListener { doLike() }
+        binding.btnCollect.setOnClickListener { doCollect() }
         binding.btnReward.setOnClickListener { showRewardDialog() }
         binding.btnSendComment.setOnClickListener { sendComment() }
         binding.etComment.setOnEditorActionListener { _, actionId, event ->
@@ -62,6 +65,7 @@ class PostDetailActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val (post, ba) = Api.postDetail(postId)
+                currentPost = post
                 authorId = post.senderId
                 binding.tvPostTitle.text = post.title.ifEmpty { "(无标题)" }
                 binding.tvAuthor.text = post.senderNickname.ifEmpty { post.senderId }
@@ -83,8 +87,12 @@ class PostDetailActivity : AppCompatActivity() {
                 } else {
                     binding.tvPostContent.text = post.content
                 }
+                // 统计：分区 · 赞 · 评论 · 收藏 · 投币
                 binding.tvPostStats.text =
-                    "${ba.name} · 赞 ${post.likeNum} · 评论 ${post.commentNum} · 投币 ${post.amountNum}"
+                    "${ba.name} · 赞 ${post.likeNum} · 评论 ${post.commentNum} · 收藏 ${post.collectNum} · 投币 ${post.amountNum}"
+                // 按钮状态：已点赞=「取消赞」，已收藏=「已收藏」
+                binding.btnLike.text = if (post.isLiked == 1) "已赞" else "点赞"
+                binding.btnCollect.text = if (post.isCollected == 1) "已收藏" else "收藏"
             } catch (e: Exception) {
                 toast("文章加载失败: ${e.message}")
             }
@@ -130,12 +138,55 @@ class PostDetailActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 Api.postLike(postId)
-                toast("操作成功")
-                loadDetail()
+                val cur = currentPost
+                if (cur != null) {
+                    val newLiked = if (cur.isLiked == 1) 0 else 1
+                    currentPost = cur.copy(
+                        isLiked = newLiked,
+                        likeNum = cur.likeNum + if (newLiked == 1) 1 else -1
+                    )
+                    binding.btnLike.text = if (newLiked == 1) "已赞" else "点赞"
+                    refreshStats()
+                } else {
+                    loadDetail()
+                }
             } catch (e: Exception) {
                 toast("点赞失败: ${e.message}")
             }
         }
+    }
+
+    private fun doCollect() {
+        lifecycleScope.launch {
+            try {
+                Api.postCollect(postId)
+                val cur = currentPost
+                if (cur != null) {
+                    val newCollected = if (cur.isCollected == 1) 0 else 1
+                    currentPost = cur.copy(
+                        isCollected = newCollected,
+                        collectNum = cur.collectNum + if (newCollected == 1) 1 else -1
+                    )
+                    binding.btnCollect.text = if (newCollected == 1) "已收藏" else "收藏"
+                    refreshStats()
+                    toast(if (newCollected == 1) "已收藏" else "已取消收藏")
+                } else {
+                    loadDetail()
+                }
+            } catch (e: Exception) {
+                toast("收藏失败: ${e.message}")
+            }
+        }
+    }
+
+    /** 根据 currentPost 刷新统计行（赞/收藏 切换后本地立即更新） */
+    private fun refreshStats() {
+        val cur = currentPost ?: return
+        val stats = binding.tvPostStats.text?.toString() ?: ""
+        // 用正则替换赞和收藏的数字，避免重新 fetch 分区名
+        var s = stats.replace(Regex("赞 \\d+"), "赞 ${cur.likeNum}")
+        s = s.replace(Regex("收藏 \\d+"), "收藏 ${cur.collectNum}")
+        binding.tvPostStats.text = s
     }
 
     private fun showRewardDialog() {

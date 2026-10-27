@@ -85,7 +85,7 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp" />
 
-            <!-- 操作按钮 -->
+            <!-- 操作按钮：点赞 / 收藏 / 投币 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -98,6 +98,16 @@
                     android:layout_height="48dp"
                     android:background="@drawable/bg_button_focus"
                     android:text="点赞"
+                    android:textColor="@color/white"
+                    android:textSize="16sp" />
+
+                <Button
+                    android:id="@+id/btn_collect"
+                    android:layout_width="140dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="12dp"
+                    android:background="@drawable/bg_button_focus"
+                    android:text="收藏"
                     android:textColor="@color/white"
                     android:textSize="16sp" />
 

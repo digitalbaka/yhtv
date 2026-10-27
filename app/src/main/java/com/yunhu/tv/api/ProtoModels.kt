@@ -7,7 +7,7 @@ object ChatType {
     const val BOT = 3
 }
 
-/** content_type: 1-文本 2-图片 3-markdown 4-文件 5-表单 7-表情 8-html 9-tip 11-语音 13-语音通话 14-a2ui */
+/** content_type: 1-文本 2-图片 3-markdown 4-文件 5-表单 7-表情 8-html 9-tip 10-视频 11-语音 13-语音通话 14-a2ui */
 object ContentType {
     const val TEXT = 1
     const val IMAGE = 2
@@ -17,6 +17,7 @@ object ContentType {
     const val STICKER = 7
     const val HTML = 8
     const val TIP = 9
+    const val VIDEO = 10
     const val AUDIO = 11
     const val CALL = 13
     const val A2UI = 14
