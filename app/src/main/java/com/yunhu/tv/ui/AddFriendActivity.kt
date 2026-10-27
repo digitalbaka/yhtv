@@ -1,20 +1,18 @@
 package com.yunhu.tv.ui
 
+import android.content.Intent
 import android.os.Bundle
-import android.text.InputType
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.widget.EditText
-import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.yunhu.tv.api.Api
+import com.yunhu.tv.api.ChatType
 import com.yunhu.tv.databinding.ActivityAddFriendBinding
 import kotlinx.coroutines.launch
 
-/** 添加好友 / 群聊 / 机器人：按 ID 综合搜索，带申请理由 */
+/** 添加好友 / 群聊 / 机器人：按 ID 或名称搜索 */
 class AddFriendActivity : AppCompatActivity() {
 
     companion object {
@@ -30,7 +28,7 @@ class AddFriendActivity : AppCompatActivity() {
         binding = ActivityAddFriendBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        adapter = SearchResultAdapter { showApplyDialog(it) }
+        adapter = SearchResultAdapter { openDetail(it) }
         binding.rvResults.layoutManager = LinearLayoutManager(this)
         binding.rvResults.adapter = adapter
 
@@ -39,7 +37,6 @@ class AddFriendActivity : AppCompatActivity() {
             if (actionId == EditorInfo.IME_ACTION_SEARCH) { doSearch(); true } else false
         }
 
-        // 从 yunhu://chat-add?id=xxx&type=xxx 跳转来时自动搜索
         val presetId = intent.getStringExtra(EXTRA_ID)
         if (!presetId.isNullOrEmpty()) {
             binding.etSearch.setText(presetId)
@@ -54,13 +51,17 @@ class AddFriendActivity : AppCompatActivity() {
         binding.tvSearchHint.visibility = View.VISIBLE
         lifecycleScope.launch {
             try {
-                val sections = Api.homeSearch(word)
                 val flat = mutableListOf<SearchResultAdapter.Row>()
-                sections.forEach { (title, list) ->
-                    if (list.isNotEmpty()) {
-                        flat.add(SearchResultAdapter.Row.Header(title))
-                        list.forEach { flat.add(SearchResultAdapter.Row.Item(it)) }
+                // 纯数字 ID 搜索：9位=群组(groupInfo)，8位=机器人(home-search)，7位=用户(getUser)
+                if (word.all { it.isDigit() }) {
+                    when (word.length) {
+                        9 -> searchGroup(word, flat)
+                        8 -> homeSearch(word, flat)
+                        7 -> searchUser(word, ChatType.USER, flat)
+                        else -> homeSearch(word, flat)
                     }
+                } else {
+                    homeSearch(word, flat)
                 }
                 adapter.submit(flat)
                 binding.tvSearchHint.visibility = if (flat.isEmpty()) View.VISIBLE else View.GONE
@@ -71,38 +72,60 @@ class AddFriendActivity : AppCompatActivity() {
         }
     }
 
-    /** 添加确认框，可填申请理由 */
-    private fun showApplyDialog(r: Api.SearchResult) {
-        val typeName = when (r.friendType) {
-            1 -> "好友"
-            2 -> "群聊"
-            3 -> "机器人"
-            else -> "对象"
-        }
-        val displayName = r.nickname.ifEmpty { r.name }.ifEmpty { r.friendId }
-        val input = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT
-            hint = "申请备注（可选）"
-        }
-        AlertDialog.Builder(this)
-            .setTitle("添加$typeName")
-            .setMessage("确定要添加 $displayName 吗？")
-            .setView(input)
-            .setPositiveButton("添加") { _, _ ->
-                doApply(r, input.text.toString().trim())
+    /** 通过 groupInfo 查找群组 */
+    private suspend fun searchGroup(id: String, flat: MutableList<SearchResultAdapter.Row>) {
+        try {
+            val g = Api.groupInfo(id)
+            if (g.groupId.isNotEmpty()) {
+                flat.add(SearchResultAdapter.Row.Header("群组"))
+                flat.add(SearchResultAdapter.Row.Item(Api.SearchResult(
+                    friendId = g.groupId,
+                    friendType = ChatType.GROUP,
+                    nickname = g.name,
+                    name = g.name,
+                    avatarUrl = g.avatarUrl
+                )))
             }
-            .setNegativeButton("取消", null)
-            .show()
+        } catch (_: Exception) { /* 群组不存在则走空结果 */ }
     }
 
-    private fun doApply(r: Api.SearchResult, remark: String) {
-        lifecycleScope.launch {
-            try {
-                Api.friendApply(r.friendId, r.friendType, remark)
-                Toast.makeText(this@AddFriendActivity, "申请已发送", Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                Toast.makeText(this@AddFriendActivity, e.message, Toast.LENGTH_SHORT).show()
+    /** 通过 getUser 查找用户或机器人 */
+    private suspend fun searchUser(id: String, type: Int, flat: MutableList<SearchResultAdapter.Row>) {
+        try {
+            val u = Api.getUser(id)
+            if (u.id.isNotEmpty()) {
+                val title = if (type == ChatType.BOT) "机器人" else "用户"
+                flat.add(SearchResultAdapter.Row.Header(title))
+                flat.add(SearchResultAdapter.Row.Item(Api.SearchResult(
+                    friendId = u.id,
+                    friendType = type,
+                    nickname = u.name,
+                    name = u.name,
+                    avatarUrl = u.avatarUrl
+                )))
+            }
+        } catch (_: Exception) { /* 不存在则走空结果 */ }
+    }
+
+    /** 名称综合搜索 */
+    private suspend fun homeSearch(word: String, flat: MutableList<SearchResultAdapter.Row>) {
+        val sections = Api.homeSearch(word)
+        sections.forEach { (title, list) ->
+            if (list.isNotEmpty()) {
+                flat.add(SearchResultAdapter.Row.Header(title))
+                list.forEach { flat.add(SearchResultAdapter.Row.Item(it)) }
             }
         }
+    }
+
+    /** 点击结果跳转到详情页 */
+    private fun openDetail(r: Api.SearchResult) {
+        startActivity(
+            Intent(this, UserProfileActivity::class.java)
+                .putExtra(UserProfileActivity.EXTRA_USER_ID, r.friendId)
+                .putExtra(UserProfileActivity.EXTRA_CHAT_TYPE, r.friendType)
+                .putExtra(UserProfileActivity.EXTRA_NAME, r.nickname.ifEmpty { r.name })
+                .putExtra(UserProfileActivity.EXTRA_AVATAR, r.avatarUrl)
+        )
     }
 }

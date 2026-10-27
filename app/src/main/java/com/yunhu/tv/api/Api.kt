@@ -318,7 +318,6 @@ object Api {
                 JSONObject().put("postId", postId).put("size", size).put("page", page)
             )
             if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取评论失败"))
-            android.util.Log.d("CommentDebug", "comment-list raw: ${resp.toString()}")
             val data = resp.optJSONObject("data")
             val arr = data?.optJSONArray("comments")
             val list = (0 until (arr?.length() ?: 0)).mapNotNull { i ->
