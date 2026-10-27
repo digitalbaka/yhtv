@@ -17,6 +17,11 @@ import kotlinx.coroutines.launch
 /** 添加好友 / 群聊 / 机器人：按 ID 综合搜索，带申请理由 */
 class AddFriendActivity : AppCompatActivity() {
 
+    companion object {
+        const val EXTRA_ID = "id"
+        const val EXTRA_TYPE = "type"
+    }
+
     private lateinit var binding: ActivityAddFriendBinding
     private lateinit var adapter: SearchResultAdapter
 
@@ -32,6 +37,13 @@ class AddFriendActivity : AppCompatActivity() {
         binding.btnSearch.setOnClickListener { doSearch() }
         binding.etSearch.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH) { doSearch(); true } else false
+        }
+
+        // 从 yunhu://chat-add?id=xxx&type=xxx 跳转来时自动搜索
+        val presetId = intent.getStringExtra(EXTRA_ID)
+        if (!presetId.isNullOrEmpty()) {
+            binding.etSearch.setText(presetId)
+            binding.etSearch.post { doSearch() }
         }
     }
 

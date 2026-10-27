@@ -248,7 +248,8 @@ object Api {
         val senderAvatar: String,
         val createTimeText: String,
         val likeNum: Int,
-        val amountNum: Int
+        val amountNum: Int,
+        val replies: List<Comment> = emptyList()
     )
 
     private fun JSONObject.toBa() = Ba(
@@ -317,24 +318,32 @@ object Api {
                 JSONObject().put("postId", postId).put("size", size).put("page", page)
             )
             if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取评论失败"))
+            android.util.Log.d("CommentDebug", "comment-list raw: ${resp.toString()}")
             val data = resp.optJSONObject("data")
             val arr = data?.optJSONArray("comments")
             val list = (0 until (arr?.length() ?: 0)).mapNotNull { i ->
-                arr?.optJSONObject(i)?.let { o ->
-                    Comment(
-                        id = o.optLong("id"),
-                        senderId = o.optString("senderId"),
-                        content = o.optString("content"),
-                        senderNickname = o.optString("senderNickname"),
-                        senderAvatar = o.optString("senderAvatar"),
-                        createTimeText = o.optString("createTimeText"),
-                        likeNum = o.optInt("likeNum"),
-                        amountNum = o.optInt("amountNum")
-                    )
-                }
+                arr?.optJSONObject(i)?.toComment()
             }
             list to (data?.optInt("total") ?: list.size)
         }
+
+    private fun JSONObject.toComment(): Comment {
+        val replies = optJSONArray("replies")
+        val replyList = (0 until (replies?.length() ?: 0)).mapNotNull {
+            replies?.optJSONObject(it)?.toComment()
+        }
+        return Comment(
+            id = optLong("id"),
+            senderId = optString("senderId"),
+            content = optString("content"),
+            senderNickname = optString("senderNickname"),
+            senderAvatar = optString("senderAvatar"),
+            createTimeText = optString("createTimeText"),
+            likeNum = optInt("likeNum"),
+            amountNum = optInt("amountNum"),
+            replies = replyList
+        )
+    }
 
     /** 发表评论。commentId=0 表示直接评论文章 */
     suspend fun commentPost(postId: Long, content: String, commentId: Long = 0) = withContext(Dispatchers.IO) {
@@ -556,5 +565,61 @@ object Api {
     suspend fun postCollect(postId: Long) = withContext(Dispatchers.IO) {
         val resp = postJson("$BASE/v1/community/posts/post-collect", JSONObject().put("id", postId))
         if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "操作失败"))
+    }
+
+    // ---------- 用户详情 / 群信息 ----------
+
+    /** 获取用户详情 */
+    suspend fun getUser(userId: String): GetUserData = withContext(Dispatchers.IO) {
+        val data = postProto("$BASE/v1/user/get-user", Requests.getUser(userId))
+        Responses.getUser(data)
+    }
+
+    /** 获取群资料 */
+    suspend fun groupInfo(groupId: String): GroupInfo = withContext(Dispatchers.IO) {
+        val data = postProto("$BASE/v1/group/info", Requests.groupInfo(groupId))
+        Responses.groupInfo(data)
+    }
+
+    /** 群成员列表 */
+    suspend fun listMember(groupId: String, size: Int = 50, page: Int = 1): Pair<List<GroupMember>, Int> =
+        withContext(Dispatchers.IO) {
+            val data = postProto("$BASE/v1/group/list-member", Requests.listMember(groupId, size, page))
+            Responses.listMember(data)
+        }
+
+    /** 编辑群信息（需管理员/群主权限） */
+    suspend fun editGroup(groupId: String, name: String = "", introduction: String = "") =
+        withContext(Dispatchers.IO) {
+            val data = postProto("$BASE/v1/group/edit-group", Requests.editGroup(groupId, name, introduction))
+            val st = Responses.status(data)
+            if (st.code != 1) throw ApiException(st.code, if (st.msg.isNotEmpty()) st.msg else "修改失败")
+        }
+
+    /** 修改我的群昵称 */
+    suspend fun editMyGroupNickname(groupId: String, nickname: String) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/group/edit-my-group-nickname",
+            JSONObject().put("groupId", groupId).put("nickname", nickname)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "修改失败"))
+    }
+
+    /** 设置会话免打扰（群聊/好友通用）。noNotify: 1-开启 0-关闭 */
+    suspend fun setConversationNotify(chatId: String, noNotify: Int) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/friend/no-notify",
+            JSONObject().put("chatId", chatId).put("noNotify", noNotify)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "设置失败"))
+    }
+
+    /** 退出群聊：将自己从群成员中移除 */
+    suspend fun quitGroup(groupId: String) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/group/remove-member",
+            JSONObject().put("groupId", groupId).put("userId", Session.userId)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "退出失败"))
     }
 }

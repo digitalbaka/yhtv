@@ -31,8 +31,15 @@
 
         <activity
             android:name=".ui.MainActivity"
-            android:exported="false"
-            android:launchMode="singleTask" />
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="yunhu" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:name=".ui.ChatActivity"
@@ -59,6 +66,18 @@
 
         <activity
             android:name=".ui.CommunitySimpleListActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.UserProfileActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.GroupSettingsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.GroupMembersActivity"
             android:exported="false" />
 
         <activity

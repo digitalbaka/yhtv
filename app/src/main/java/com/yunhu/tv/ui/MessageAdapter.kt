@@ -1,5 +1,6 @@
 package com.yunhu.tv.ui
 
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -155,7 +156,13 @@ class MessageAdapter(
         }
 
         h.itemView.setOnClickListener { onClick(m) }
-        h.itemView.setOnLongClickListener { onLongClick(m); true }
+        // 遥控器菜单键触发消息操作菜单（替换原先的长按）
+        h.itemView.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_MENU) {
+                onLongClick(m)
+                true
+            } else false
+        }
         FocusEffects.apply(h.itemView)
     }
 

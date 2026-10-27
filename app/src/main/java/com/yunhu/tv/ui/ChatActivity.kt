@@ -24,6 +24,7 @@ import com.yunhu.tv.api.StreamMsg
 import com.yunhu.tv.api.WsClient
 import com.yunhu.tv.databinding.ActivityChatBinding
 import com.yunhu.tv.util.Session
+import com.yunhu.tv.util.YunhuRouter
 import kotlinx.coroutines.launch
 
 class ChatActivity : AppCompatActivity() {
@@ -151,6 +152,15 @@ class ChatActivity : AppCompatActivity() {
 
     private fun setupInput() {
         binding.btnQuoteCancel.setOnClickListener { clearQuote() }
+        binding.btnSettings.setOnClickListener {
+            if (chatType == ChatType.GROUP) {
+                startActivity(Intent(this, GroupSettingsActivity::class.java)
+                    .putExtra(GroupSettingsActivity.EXTRA_GROUP_ID, chatId))
+            } else {
+                startActivity(Intent(this, UserProfileActivity::class.java)
+                    .putExtra(UserProfileActivity.EXTRA_USER_ID, chatId))
+            }
+        }
         binding.btnSend.setOnClickListener { sendText() }
         binding.etInput.setOnEditorActionListener { _, actionId, event ->
             val send = actionId == EditorInfo.IME_ACTION_SEND ||
@@ -286,6 +296,17 @@ class ChatActivity : AppCompatActivity() {
         val imgUrl = MessageAdapter.imageUrlOf(m)
         if (imgUrl.isNotEmpty()) actions.add("查看图片" to { openImage(imgUrl) })
         if (m.content.text.isNotEmpty()) actions.add("复制文字" to { copyText(m.content.text) })
+        // 查看对方信息（他人消息）
+        if (!MessageAdapter.isOwn(m) && m.sender.chatId.isNotEmpty()) {
+            actions.add("查看对方信息" to { openUserProfile(m.sender.chatId) })
+        }
+        // 打开 yunhu:// 应用内链接
+        val yunhuLink = YunhuRouter.extractYunhuLink(m.content.text)
+        if (yunhuLink != null) {
+            actions.add("打开链接" to {
+                if (!YunhuRouter.open(this, yunhuLink)) toast("无法识别的链接")
+            })
+        }
         // 引用（未撤回的消息）
         if (!m.isRecalled) actions.add("引用" to { setQuote(m) })
         // 转发到其他会话
@@ -371,6 +392,10 @@ class ChatActivity : AppCompatActivity() {
 
     private fun openImage(url: String) {
         startActivity(Intent(this, ImageViewActivity::class.java).putExtra(ImageViewActivity.EXTRA_URL, url))
+    }
+
+    private fun openUserProfile(userId: String) {
+        startActivity(Intent(this, UserProfileActivity::class.java).putExtra(UserProfileActivity.EXTRA_USER_ID, userId))
     }
 
     private fun copyText(text: String) {

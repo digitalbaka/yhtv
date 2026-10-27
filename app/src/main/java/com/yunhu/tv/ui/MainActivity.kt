@@ -123,6 +123,22 @@ class MainActivity : AppCompatActivity() {
         }
         binding.btnEditNickname.setOnClickListener { showEditNicknameDialog() }
         binding.btnEditIntro.setOnClickListener { showEditIntroDialog() }
+
+        // 处理 yunhu:// 深链（外部唤起或应用内跳转）
+        handleDeepLink(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDeepLink(intent)
+    }
+
+    private fun handleDeepLink(intent: Intent) {
+        val uri = intent.data ?: return
+        if (uri.scheme == "yunhu") {
+            com.yunhu.tv.util.YunhuRouter.open(this, uri.toString())
+        }
     }
 
     private fun setupTabs() {

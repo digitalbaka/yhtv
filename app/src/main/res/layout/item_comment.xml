@@ -60,5 +60,13 @@
             android:textColor="@color/text_secondary"
             android:textSize="12sp"
             android:visibility="gone" />
+
+        <!-- 回复列表 -->
+        <LinearLayout
+            android:id="@+id/ll_replies"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="vertical" />
     </LinearLayout>
 </LinearLayout>

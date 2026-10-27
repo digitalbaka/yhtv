@@ -36,6 +36,8 @@ class PostDetailActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityPostDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // 支持 Markdown 中的可点击链接
+        binding.tvPostContent.movementMethod = android.text.method.LinkMovementMethod.getInstance()
 
         postId = intent.getLongExtra(EXTRA_POST_ID, 0)
 
@@ -68,9 +70,15 @@ class PostDetailActivity : AppCompatActivity() {
                     placeholder(R.drawable.bg_card)
                     error(R.drawable.bg_card)
                 }
-                // Markdown 文章转纯文本阅读，并提取图片直接显示
+                // Markdown 文章：用轻量 span 渲染（仅文本样式，不产生图片 bitmap），图片单独渲染
                 if (post.contentType == 2) {
-                    binding.tvPostContent.text = MarkdownLite.toPlain(post.content)
+                    val baseSize = (17 * resources.displayMetrics.density).toInt()
+                    binding.tvPostContent.text = MarkdownLite.toSpanned(post.content, baseSize) { url ->
+                        if (!com.yunhu.tv.util.YunhuRouter.open(this@PostDetailActivity, url)) {
+                            // 非 yunhu:// 链接尝试用系统浏览器打开
+                            runCatching { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+                        }
+                    }
                     showImages(post.content)
                 } else {
                     binding.tvPostContent.text = post.content
@@ -109,7 +117,8 @@ class PostDetailActivity : AppCompatActivity() {
                 scaleType = ImageView.ScaleType.FIT_CENTER
             }
             iv.load(Api.fullImageUrl(url)) {
-                size(1080, 720)
+                // 按屏宽采样解码，避免超大原图占用内存（配合全局 RGB565）
+                size(resources.displayMetrics.widthPixels, resources.displayMetrics.widthPixels)
                 placeholder(R.drawable.bg_card)
                 error(R.drawable.bg_card)
             }

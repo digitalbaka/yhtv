@@ -380,6 +380,167 @@ data class ApplyRequest(
     }
 }
 
+/** 群资料 */
+data class GroupInfo(
+    var groupId: String = "",
+    var name: String = "",
+    var avatarUrl: String = "",
+    var introduction: String = "",
+    var headcount: Long = 0,
+    var createBy: String = "",
+    var directJoin: Boolean = false,
+    var permissionLevel: Int = 0,
+    var historyMsg: Boolean = false,
+    var categoryName: String = "",
+    var isPrivate: Boolean = false,
+    var doNotDisturb: Boolean = false,
+    var top: Boolean = false,
+    var admins: List<String> = emptyList(),
+    var owner: String = "",
+    var myGroupNickname: String = "",
+    var groupCode: String = ""
+) {
+    val isAdmin: Boolean get() = permissionLevel == 100 || admins.contains(createBy) // 简化：权限>=2 或在管理员列表
+    companion object {
+        fun decode(data: ByteArray): GroupInfo {
+            val g = GroupInfo()
+            val r = ProtoReader(data)
+            val admins = mutableListOf<String>()
+            while (r.hasMore()) {
+                val tag = r.readTag()
+                when (tag ushr 3) {
+                    1 -> g.groupId = r.readString()
+                    2 -> g.name = r.readString()
+                    3 -> g.avatarUrl = r.readString()
+                    5 -> g.introduction = r.readString()
+                    6 -> g.headcount = r.readVarint()
+                    7 -> g.createBy = r.readString()
+                    8 -> g.directJoin = r.readVarint() != 0L
+                    9 -> g.permissionLevel = r.readVarint().toInt()
+                    10 -> g.historyMsg = r.readVarint() != 0L
+                    11 -> g.categoryName = r.readString()
+                    13 -> g.isPrivate = r.readVarint() != 0L
+                    14 -> g.doNotDisturb = r.readVarint() != 0L
+                    19 -> g.top = r.readVarint() != 0L
+                    20 -> admins.add(r.readString())
+                    23 -> g.owner = r.readString()
+                    28 -> g.myGroupNickname = r.readString()
+                    29 -> g.groupCode = r.readString()
+                    else -> r.skip(tag and 7)
+                }
+            }
+            g.admins = admins
+            return g
+        }
+    }
+}
+
+/** 群成员 */
+data class GroupMember(
+    var userId: String = "",
+    var name: String = "",
+    var avatarUrl: String = "",
+    var isVip: Boolean = false,
+    var permissionLevel: Int = 0,
+    var isGag: Boolean = false
+) {
+    companion object {
+        fun decode(data: ByteArray): GroupMember {
+            val m = GroupMember()
+            val r = ProtoReader(data)
+            while (r.hasMore()) {
+                val tag = r.readTag()
+                when (tag ushr 3) {
+                    1 -> {} // group_id
+                    2 -> {
+                        val sub = ProtoReader(r.readBytes())
+                        while (sub.hasMore()) {
+                            val t2 = sub.readTag()
+                            when (t2 ushr 3) {
+                                1 -> m.userId = sub.readString()
+                                2 -> m.name = sub.readString()
+                                4 -> m.avatarUrl = sub.readString()
+                                6 -> m.isVip = sub.readVarint() != 0L
+                                else -> sub.skip(t2 and 7)
+                            }
+                        }
+                    }
+                    3 -> m.permissionLevel = r.readVarint().toInt()
+                    5 -> m.isGag = r.readVarint() != 0L
+                    else -> r.skip(tag and 7)
+                }
+            }
+            return m
+        }
+    }
+}
+
+/** 用户资料（ProfileInfo） */
+data class ProfileInfo(
+    var introduction: String = "",
+    var gender: Int = 3,
+    var birthday: Long = 0,
+    var city: String = "",
+    var district: String = "",
+    var address: String = ""
+)
+
+/** 用户详情（GetUserResponse.Data 核心字段） */
+data class GetUserData(
+    var id: String = "",
+    var name: String = "",
+    var avatarUrl: String = "",
+    var registerTime: String = "",
+    var onlineDay: Int = 0,
+    var continuousOnlineDay: Int = 0,
+    var isVip: Boolean = false,
+    var isBlocked: Boolean = false,
+    var ipGeo: String = "",
+    var profile: ProfileInfo = ProfileInfo()
+) {
+    companion object {
+        fun decode(data: ByteArray): GetUserData {
+            val u = GetUserData()
+            val r = ProtoReader(data)
+            while (r.hasMore()) {
+                val tag = r.readTag()
+                when (tag ushr 3) {
+                    1 -> u.id = r.readString()
+                    2 -> u.name = r.readString()
+                    4 -> u.avatarUrl = r.readString()
+                    7 -> u.registerTime = r.readString()
+                    11 -> u.onlineDay = r.readVarint().toInt()
+                    12 -> u.continuousOnlineDay = r.readVarint().toInt()
+                    13 -> u.isVip = r.readVarint() != 0L
+                    16 -> u.isBlocked = r.readVarint() != 0L
+                    19 -> u.profile = decodeProfile(r.readBytes())
+                    20 -> u.ipGeo = r.readString()
+                    else -> r.skip(tag and 7)
+                }
+            }
+            return u
+        }
+
+        private fun decodeProfile(data: ByteArray): ProfileInfo {
+            val p = ProfileInfo()
+            val r = ProtoReader(data)
+            while (r.hasMore()) {
+                val tag = r.readTag()
+                when (tag ushr 3) {
+                    2 -> p.introduction = r.readString()
+                    3 -> p.gender = r.readVarint().toInt()
+                    4 -> p.birthday = r.readVarint()
+                    5 -> p.city = r.readString()
+                    6 -> p.district = r.readString()
+                    7 -> p.address = r.readString()
+                    else -> r.skip(tag and 7)
+                }
+            }
+            return p
+        }
+    }
+}
+
 data class StatusInfo(
     var requestId: Long = 0,
     var code: Int = 0,
@@ -521,6 +682,40 @@ object Requests {
         w.varint(4, chatType.toLong())
         return w.toByteArray()
     }
+
+    /** 获取用户详情 GetUserRequest id=2 */
+    fun getUser(userId: String): ByteArray {
+        val w = ProtoWriter()
+        w.string(2, userId)
+        return w.toByteArray()
+    }
+
+    /** 群信息 GroupInfoRequest group_id=2 */
+    fun groupInfo(groupId: String): ByteArray {
+        val w = ProtoWriter()
+        w.string(2, groupId)
+        return w.toByteArray()
+    }
+
+    /** 群成员列表 ListMemberRequest: data=2{size=1,page=2}, group_id=3, keywords=4 */
+    fun listMember(groupId: String, size: Int = 50, page: Int = 1): ByteArray {
+        val w = ProtoWriter()
+        val inner = ProtoWriter()
+        inner.varint(1, size.toLong())
+        inner.varint(2, page.toLong())
+        w.bytes(2, inner.toByteArray())
+        w.string(3, groupId)
+        return w.toByteArray()
+    }
+
+    /** 编辑群信息 EditGroupRequest */
+    fun editGroup(groupId: String, name: String = "", introduction: String = ""): ByteArray {
+        val w = ProtoWriter()
+        w.string(2, groupId)
+        if (name.isNotEmpty()) w.string(3, name)
+        if (introduction.isNotEmpty()) w.string(4, introduction)
+        return w.toByteArray()
+    }
 }
 
 /** 响应解码集合 */
@@ -596,5 +791,49 @@ object Responses {
             }
         }
         return list to pending
+    }
+
+    /** GetUserResponse: status=1, data=2 */
+    fun getUser(data: ByteArray): GetUserData {
+        val r = ProtoReader(data)
+        var u = GetUserData()
+        while (r.hasMore()) {
+            val tag = r.readTag()
+            when (tag ushr 3) {
+                2 -> u = GetUserData.decode(r.readBytes())
+                else -> r.skip(tag and 7)
+            }
+        }
+        return u
+    }
+
+    /** GroupInfoResponse: status=1, data=2 */
+    fun groupInfo(data: ByteArray): GroupInfo {
+        val r = ProtoReader(data)
+        var g = GroupInfo()
+        while (r.hasMore()) {
+            val tag = r.readTag()
+            when (tag ushr 3) {
+                2 -> g = GroupInfo.decode(r.readBytes())
+                else -> r.skip(tag and 7)
+            }
+        }
+        return g
+    }
+
+    /** ListMemberResponse: status=1, user=2 repeated, total=3 */
+    fun listMember(data: ByteArray): Pair<List<GroupMember>, Int> {
+        val r = ProtoReader(data)
+        val list = mutableListOf<GroupMember>()
+        var total = 0
+        while (r.hasMore()) {
+            val tag = r.readTag()
+            when (tag ushr 3) {
+                2 -> list.add(GroupMember.decode(r.readBytes()))
+                3 -> total = r.readVarint().toInt()
+                else -> r.skip(tag and 7)
+            }
+        }
+        return list to total
     }
 }
