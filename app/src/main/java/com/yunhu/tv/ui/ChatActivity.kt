@@ -329,8 +329,17 @@ class ChatActivity : AppCompatActivity() {
     private fun onMsgClick(m: ChatMsg) {
         val img = MessageAdapter.imageUrlOf(m)
         if (img.isNotEmpty()) { openImage(img); return }
-        val video = MessageAdapter.videoUrlOf(m)
-        if (video.isNotEmpty()) openVideo(video)
+        val media = MessageAdapter.playableUrlOf(m)
+        if (media.isNotEmpty()) {
+            val isAudio = m.contentType == ContentType.AUDIO ||
+                (m.contentType == ContentType.FILE && MessageAdapter.isAudioFile(m.content.fileName))
+            val title = when (m.contentType) {
+                ContentType.AUDIO -> "语音消息"
+                ContentType.FILE -> m.content.fileName
+                else -> chatName
+            }
+            openVideo(media, title, isAudio)
+        }
     }
 
     private fun onMsgLongClick(m: ChatMsg) {
@@ -436,11 +445,12 @@ class ChatActivity : AppCompatActivity() {
         startActivity(Intent(this, ImageViewActivity::class.java).putExtra(ImageViewActivity.EXTRA_URL, url))
     }
 
-    private fun openVideo(url: String) {
+    private fun openVideo(url: String, title: String = chatName, isAudio: Boolean = false) {
         startActivity(
             Intent(this, VideoPlayerActivity::class.java)
                 .putExtra(VideoPlayerActivity.EXTRA_URL, url)
-                .putExtra(VideoPlayerActivity.EXTRA_TITLE, chatName)
+                .putExtra(VideoPlayerActivity.EXTRA_TITLE, title)
+                .putExtra(VideoPlayerActivity.EXTRA_IS_AUDIO, isAudio)
         )
     }
 

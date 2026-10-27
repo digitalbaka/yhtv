@@ -16,7 +16,9 @@ import com.yunhu.tv.api.ChatMsg
 import com.yunhu.tv.api.WsClient
 import com.yunhu.tv.databinding.ActivityMainBinding
 import com.yunhu.tv.util.Session
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
@@ -123,6 +125,8 @@ class MainActivity : AppCompatActivity() {
         }
         binding.btnEditNickname.setOnClickListener { showEditNicknameDialog() }
         binding.btnEditIntro.setOnClickListener { showEditIntroDialog() }
+        binding.btnClearCache.setOnClickListener { confirmClearCache() }
+        refreshCacheSize()
 
         // 处理 yunhu:// 深链（外部唤起或应用内跳转）
         handleDeepLink(intent)
@@ -339,5 +343,66 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    // ---------- 缓存清理 ----------
+
+    /** 异步计算 cacheDir 总大小，更新按钮文案 */
+    private fun refreshCacheSize() {
+        lifecycleScope.launch {
+            val size = withContext(Dispatchers.IO) { cacheSize(cacheDir) }
+            val text = if (size > 0) "清除缓存 (${formatBytes(size)})" else "清除缓存"
+            binding.btnClearCache.text = text
+        }
+    }
+
+    private fun confirmClearCache() {
+        lifecycleScope.launch {
+            val size = withContext(Dispatchers.IO) { cacheSize(cacheDir) }
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle("清除缓存？")
+                .setMessage(if (size > 0) "将清理 ${formatBytes(size)} 的临时文件" else "当前没有可清理的缓存")
+                .setPositiveButton("清除") { _, _ ->
+                    lifecycleScope.launch {
+                        val freed = withContext(Dispatchers.IO) {
+                            val before = cacheSize(cacheDir)
+                            deleteAll(cacheDir)
+                            before - cacheSize(cacheDir)
+                        }
+                        Toast.makeText(
+                            this@MainActivity,
+                            if (freed > 0) "已清理 ${formatBytes(freed)}" else "已清理",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        binding.btnClearCache.text = "清除缓存"
+                    }
+                }
+                .setNegativeButton("取消", null)
+                .show()
+        }
+    }
+
+    /** 递归统计目录总字节数 */
+    private fun cacheSize(dir: java.io.File): Long {
+        if (!dir.exists()) return 0
+        var total = 0L
+        dir.listFiles()?.forEach {
+            total += if (it.isDirectory) cacheSize(it) else it.length()
+        }
+        return total
+    }
+
+    /** 递归删除目录下所有内容（保留目录本身） */
+    private fun deleteAll(dir: java.io.File) {
+        dir.listFiles()?.forEach {
+            if (it.isDirectory) deleteAll(it) else try { it.delete() } catch (_: Exception) {}
+        }
+    }
+
+    private fun formatBytes(bytes: Long): String = when {
+        bytes < 1024 -> "${bytes}B"
+        bytes < 1024 * 1024 -> "%.1fKB".format(bytes / 1024.0)
+        bytes < 1024 * 1024 * 1024 -> "%.1fMB".format(bytes / 1024.0 / 1024.0)
+        else -> "%.1fGB".format(bytes / 1024.0 / 1024.0 / 1024.0)
     }
 }

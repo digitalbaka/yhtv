@@ -392,10 +392,20 @@
             </LinearLayout>
 
             <Button
-                android:id="@+id/btn_logout"
+                android:id="@+id/btn_clear_cache"
                 android:layout_width="240dp"
                 android:layout_height="52dp"
                 android:layout_marginTop="16dp"
+                android:background="@drawable/bg_button_focus"
+                android:text="清除缓存"
+                android:textColor="@color/white"
+                android:textSize="18sp" />
+
+            <Button
+                android:id="@+id/btn_logout"
+                android:layout_width="240dp"
+                android:layout_height="52dp"
+                android:layout_marginTop="12dp"
                 android:background="@drawable/bg_button_focus"
                 android:text="退出登录"
                 android:textColor="@color/white"

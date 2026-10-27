@@ -36,12 +36,16 @@ class VideoPlayerActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_URL = "url"
         const val EXTRA_TITLE = "title"
+
+        /** 音频（mp3/语音）标记：本地代理路径用 .mp3，规避部分机型 MIME 嗅探问题 */
+        const val EXTRA_IS_AUDIO = "is_audio"
         private const val SEEK_STEP_SEC = 10
     }
 
     private lateinit var binding: ActivityVideoPlayerBinding
     private var proxy: LocalVideoProxy? = null
     private var videoUrl: String = ""
+    private var isAudio: Boolean = false
     private val handler = Handler(Looper.getMainLooper())
     private var pausedManually = false
 
@@ -59,11 +63,12 @@ class VideoPlayerActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         videoUrl = intent.getStringExtra(EXTRA_URL).orEmpty()
+        isAudio = intent.getBooleanExtra(EXTRA_IS_AUDIO, false)
         binding.tvTitle.text = intent.getStringExtra(EXTRA_TITLE).orEmpty()
         binding.tvKeys.text = "确定键 播放/暂停   左右键 快退/快进 10 秒   返回键 退出"
 
         if (videoUrl.isEmpty()) {
-            showPersistent("视频地址为空")
+            showPersistent("媒体地址为空")
             return
         }
 
@@ -89,18 +94,44 @@ class VideoPlayerActivity : AppCompatActivity() {
     private fun startProxyAndPlay() {
         lifecycleScope.launch {
             try {
-                val p = withContext(Dispatchers.IO) {
-                    LocalVideoProxy(App.mediaClient, videoUrl).also { it.start() }
+                if (isAudio) {
+                    // 音频走"下载到缓存再本地播放"：部分老电视 mediaserver 对
+                    // loopback 本地代理返回 -10102，文件播放最稳
+                    downloadAndPlayAudio()
+                } else {
+                    val p = withContext(Dispatchers.IO) {
+                        LocalVideoProxy(App.mediaClient, videoUrl).also { it.start() }
+                    }
+                    proxy = p
+                    binding.videoView.setVideoPath("http://127.0.0.1:${p.port}/video.mp4")
+                    binding.videoView.start()
+                    handler.post(progressTick)
                 }
-                proxy = p
-                val localUrl = "http://127.0.0.1:${p.port}/video.mp4"
-                binding.videoView.setVideoPath(localUrl)
-                binding.videoView.start()
-                handler.post(progressTick)
             } catch (e: Exception) {
                 showPersistent("启动失败：${e.message}")
             }
         }
+    }
+
+    /** 音频下载到缓存目录后用 VideoView 播放本地文件 */
+    private suspend fun downloadAndPlayAudio() {
+        showPersistent("加载音频…")
+        val file = withContext(Dispatchers.IO) {
+            val f = java.io.File(cacheDir, "audio_play.bin")
+            val req = okhttp3.Request.Builder().url(videoUrl).get().build()
+            App.mediaClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+                resp.body?.byteStream()?.use { input ->
+                    f.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+            android.util.Log.i("VideoProxy", "audio downloaded: ${f.length()} bytes from $videoUrl")
+            f
+        }
+        hideState()
+        binding.videoView.setVideoPath(file.absolutePath)
+        binding.videoView.start()
+        handler.post(progressTick)
     }
 
     private fun updateProgress() {
@@ -216,6 +247,7 @@ private class LocalVideoProxy(
     private fun handle(socket: Socket) {
         val input = BufferedReader(InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII))
         val first = input.readLine() ?: return
+        android.util.Log.i("VideoProxy", "req: $first -> $targetUrl")
         val parts = first.split(" ")
         if (parts.size < 2 || parts[0] != "GET") { writeError(socket, 400, "Bad Request"); return }
 
@@ -233,6 +265,10 @@ private class LocalVideoProxy(
         rangeHeader?.let { reqBuilder.header("Range", it) }
 
         val resp = client.newCall(reqBuilder.build()).execute()
+        android.util.Log.i(
+            "VideoProxy",
+            "resp: code=${resp.code} type=${resp.header("Content-Type")} len=${resp.header("Content-Length")} range=${resp.header("Content-Range")}"
+        )
         val out = socket.getOutputStream()
 
         val sb = StringBuilder()

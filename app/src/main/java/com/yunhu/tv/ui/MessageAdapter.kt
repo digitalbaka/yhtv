@@ -38,9 +38,25 @@ class MessageAdapter(
             else -> ""
         }
 
-        /** 视频消息的直链地址，非视频类返回空串 */
-        fun videoUrlOf(m: ChatMsg): String =
-            if (m.contentType == ContentType.VIDEO) Api.fullImageUrl(m.content.videoUrl) else ""
+        /** 可送入播放器的媒体直链（视频 / 音频文件 / 语音消息），不可播放返回空串 */
+        fun playableUrlOf(m: ChatMsg): String = when (m.contentType) {
+            ContentType.VIDEO -> Api.fullImageUrl(m.content.videoUrl)
+            ContentType.AUDIO -> Api.fullImageUrl(
+                m.content.audioUrl.ifEmpty { m.content.fileUrl.ifEmpty { m.content.videoUrl } }
+            )
+            ContentType.FILE -> if (isAudioFile(m.content.fileName))
+                Api.fullImageUrl(m.content.fileUrl.ifEmpty { m.content.videoUrl })
+            else ""
+            else -> ""
+        }
+
+        /** 按文件扩展名判断是否音频文件（mp3 等） */
+        fun isAudioFile(name: String): Boolean {
+            val n = name.lowercase().substringAfterLast('/')
+            return n.endsWith(".mp3") || n.endsWith(".m4a") || n.endsWith(".aac") ||
+                n.endsWith(".wav") || n.endsWith(".flac") || n.endsWith(".ogg") ||
+                n.endsWith(".opus")
+        }
 
         fun durationText(seconds: Int): String =
             if (seconds <= 0) "" else "%02d:%02d".format(seconds / 60, seconds % 60)
@@ -196,13 +212,14 @@ class MessageAdapter(
                 showImage(h, Api.fullImageUrl(m.content.imageUrl))
             }
             ContentType.STICKER -> showImage(h, Api.fullImageUrl(m.content.image))
-            ContentType.FILE -> showFile(
-                h,
-                if (m.content.videoUrl.isNotEmpty()) "[视频] ${m.content.fileName}"
-                else "[文件] ${m.content.fileName}\n${formatSize(m.content.fileSize)}"
-            )
+            ContentType.FILE -> if (m.content.videoUrl.isNotEmpty() && !isAudioFile(m.content.fileName))
+                showFile(h, "[视频] ${m.content.fileName}")
+            else if (isAudioFile(m.content.fileName))
+                showFile(h, "[音频] ${m.content.fileName}\n${formatSize(m.content.fileSize)} · 点按播放")
+            else
+                showFile(h, "[文件] ${m.content.fileName}\n${formatSize(m.content.fileSize)}")
             ContentType.VIDEO -> showVideo(h, m)
-            ContentType.AUDIO -> showFile(h, "[语音] ${m.content.audioTime} 秒")
+            ContentType.AUDIO -> showFile(h, "[语音] ${m.content.audioTime} 秒 · 点按播放")
             ContentType.CALL -> showFile(h, "[通话] ${m.content.callStatusText.ifEmpty { "语音通话" }}")
             ContentType.FORM -> showText(h, "[表单消息，请在手机端查看]")
             ContentType.A2UI -> showText(h, "[互动消息，请在手机端查看]")
