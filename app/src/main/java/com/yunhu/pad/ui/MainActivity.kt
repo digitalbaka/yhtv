@@ -13,8 +13,10 @@ import com.yunhu.pad.App
 import com.yunhu.pad.R
 import com.yunhu.pad.api.Api
 import com.yunhu.pad.api.ChatMsg
+import com.yunhu.pad.api.Conversation
 import com.yunhu.pad.api.WsClient
 import com.yunhu.pad.databinding.ActivityMainBinding
+import com.yunhu.pad.util.Prefs
 import com.yunhu.pad.util.Session
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -75,7 +77,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupLists() {
         conversationAdapter = ConversationAdapter(
             onClick = { openChat(it.chatId, it.chatType, it.displayName) },
-            onLongClick = { confirmDeleteConversation(it.chatId) }
+            onLongClick = { showConversationMenu(it) }
         )
         binding.rvConversations.layoutManager = LinearLayoutManager(this)
         binding.rvConversations.adapter = conversationAdapter
@@ -126,6 +128,14 @@ class MainActivity : AppCompatActivity() {
         binding.btnEditNickname.setOnClickListener { showEditNicknameDialog() }
         binding.btnEditIntro.setOnClickListener { showEditIntroDialog() }
         binding.btnClearCache.setOnClickListener { confirmClearCache() }
+        // 全局搜索 & 社区搜索共用同一入口页
+        binding.btnGlobalSearch.setOnClickListener {
+            startActivity(Intent(this, GlobalSearchActivity::class.java))
+        }
+        binding.btnCommunitySearch.setOnClickListener {
+            startActivity(Intent(this, GlobalSearchActivity::class.java))
+        }
+        binding.btnMyDrafts.setOnClickListener { openLastDraft() }
         refreshCacheSize()
 
         // 处理 yunhu:// 深链（外部唤起或应用内跳转）
@@ -153,6 +163,9 @@ class MainActivity : AppCompatActivity() {
             tab.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) switchTab(index) }
         }
         binding.btnLogout.setOnClickListener { confirmLogout() }
+        binding.btnSettings.setOnClickListener {
+            startActivity(android.content.Intent(this, SettingsActivity::class.java))
+        }
     }
 
     private fun switchTab(index: Int) {
@@ -313,6 +326,96 @@ class MainActivity : AppCompatActivity() {
                 .putExtra(ChatActivity.EXTRA_CHAT_NAME, name)
         )
     }
+
+    /** 会话长按：置顶 / 取消置顶 / 置顶到最前 / 删除 */
+    private fun showConversationMenu(c: Conversation) {
+        lifecycleScope.launch {
+            val pinned = runCatching { Api.stickyList() }
+                .getOrDefault(emptyList())
+                .firstOrNull { it.chatId == c.chatId && it.chatType == c.chatType }
+            val actions = mutableListOf<Pair<String, () -> Unit>>()
+            if (pinned == null) {
+                actions.add("置顶会话" to { setSticky(c, true) })
+            } else {
+                actions.add("取消置顶" to { setSticky(c, false) })
+                actions.add("置顶到最前" to {
+                    lifecycleScope.launch {
+                        try {
+                            Api.stickyTopping(pinned.id)
+                            toast("已置顶到最前")
+                        } catch (e: Exception) {
+                            toast("操作失败: ${e.message}")
+                        }
+                    }
+                })
+            }
+            actions.add("删除会话" to { confirmDeleteConversation(c.chatId) })
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle(c.displayName.ifEmpty { c.chatId })
+                .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
+                .show()
+        }
+    }
+
+    private fun setSticky(c: Conversation, pin: Boolean) {
+        lifecycleScope.launch {
+            try {
+                if (pin) Api.stickyAdd(c.chatId, c.chatType) else Api.stickyDelete(c.chatId, c.chatType)
+                toast(if (pin) "已置顶" else "已取消置顶")
+                conversationMd5 = ""
+                refreshConversations()
+            } catch (e: Exception) {
+                toast("操作失败: ${e.message}")
+            }
+        }
+    }
+
+    /** 草稿箱：文档没有草稿列表接口，只能恢复本地记录的最后一份草稿 */
+    private fun openLastDraft() {
+        val id = Prefs.lastDraftId
+        if (id <= 0) {
+            toast("暂无草稿（保存草稿后可从「我的」继续编辑）")
+            return
+        }
+        lifecycleScope.launch {
+            try {
+                val draft = Api.getDraft(id, Prefs.lastDraftBaId)
+                if (draft == null) {
+                    Prefs.lastDraftId = 0
+                    toast("草稿已失效")
+                    return@launch
+                }
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("草稿箱")
+                    .setMessage("${draft.title.ifEmpty { "(无标题)" }}\n\n${draft.content.take(120)}")
+                    .setPositiveButton("继续编辑") { _, _ ->
+                        startActivity(
+                            Intent(this@MainActivity, PostCreateActivity::class.java)
+                                .putExtra(PostCreateActivity.EXTRA_DRAFT_ID, id)
+                                .putExtra(PostCreateActivity.EXTRA_DRAFT_BA_ID, draft.baId)
+                                .putExtra(PostCreateActivity.EXTRA_BA_NAME, "")
+                        )
+                    }
+                    .setNeutralButton("删除草稿") { _, _ ->
+                        lifecycleScope.launch {
+                            try {
+                                Api.cancelDraft(id)
+                                Prefs.lastDraftId = 0
+                                toast("草稿已删除")
+                            } catch (e: Exception) {
+                                toast("删除失败: ${e.message}")
+                            }
+                        }
+                    }
+                    .setNegativeButton("关闭", null)
+                    .show()
+            } catch (e: Exception) {
+                toast("读取草稿失败: ${e.message}")
+            }
+        }
+    }
+
+    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
     private fun confirmDeleteConversation(chatId: String) {
         AlertDialog.Builder(this)

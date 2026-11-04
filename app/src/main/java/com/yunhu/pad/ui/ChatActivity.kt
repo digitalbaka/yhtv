@@ -1,12 +1,20 @@
 package com.yunhu.pad.ui
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.MediaRecorder
+import android.net.Uri
 import android.os.Bundle
+import android.os.CountDownTimer
+import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -21,13 +29,20 @@ import com.yunhu.pad.api.ChatMsg
 import com.yunhu.pad.api.ChatType
 import com.yunhu.pad.api.ContentType
 import com.yunhu.pad.api.MsgContent
+import com.yunhu.pad.api.Qiniu
 import com.yunhu.pad.api.Sender
 import com.yunhu.pad.api.StreamMsg
 import com.yunhu.pad.api.WsClient
 import com.yunhu.pad.databinding.ActivityChatBinding
+import com.yunhu.pad.util.MediaPrep
+import com.yunhu.pad.util.Prefs
 import com.yunhu.pad.util.Session
 import com.yunhu.pad.util.YunhuRouter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.IOException
 
 class ChatActivity : AppCompatActivity() {
 
@@ -35,6 +50,12 @@ class ChatActivity : AppCompatActivity() {
         const val EXTRA_CHAT_ID = "chat_id"
         const val EXTRA_CHAT_TYPE = "chat_type"
         const val EXTRA_CHAT_NAME = "chat_name"
+        // 从聊天记录搜索跳转时携带的目标消息
+        const val EXTRA_TARGET_MSG_ID = "target_msg_id"
+        const val EXTRA_TARGET_TEXT = "target_text"
+        const val EXTRA_TARGET_NAME = "target_name"
+        const val EXTRA_TARGET_AVATAR = "target_avatar"
+        const val EXTRA_TARGET_TIME = "target_time"
         private const val PAGE_SIZE = 30
     }
 
@@ -49,6 +70,26 @@ class ChatActivity : AppCompatActivity() {
     private var loadingOlder = false
     private var hasMore = true
     private var stickersLoaded = false
+
+    // ---------- 媒体发送 ----------
+
+    private var uploading = false
+    private var recorder: MediaRecorder? = null
+    private var recordFile: File? = null
+    private var recordStartMs = 0L
+    private var recordTimer: CountDownTimer? = null
+
+    private val pickImage = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { sendImage(it) }
+    }
+
+    private val pickVideo = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { sendVideo(it) }
+    }
+
+    private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startRecording() else toast("未授予麦克风权限，无法发送语音")
+    }
 
     private val wsListener = object : WsClient.Listener {
         override fun onPush(msg: ChatMsg) {
@@ -88,13 +129,14 @@ class ChatActivity : AppCompatActivity() {
 
         setupMessages()
         setupInput()
-
+        applyChatBackground()
         App.wsClient.addListener(wsListener)
         loadInitial()
         lifecycleScope.launch { Api.dismissNotification(chatId) }
     }
 
     override fun onDestroy() {
+        stopRecorder()
         App.wsClient.removeListener(wsListener)
         super.onDestroy()
     }
@@ -118,6 +160,11 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun loadInitial() {
+        val targetId = intent.getStringExtra(EXTRA_TARGET_MSG_ID).orEmpty()
+        if (targetId.isNotEmpty()) {
+            loadAroundTarget(targetId)
+            return
+        }
         lifecycleScope.launch {
             try {
                 val list = Api.listMessages(chatId, chatType, PAGE_SIZE)
@@ -126,6 +173,42 @@ class ChatActivity : AppCompatActivity() {
                 scrollToBottom()
             } catch (e: Exception) {
                 toast("消息加载失败: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * 从聊天记录搜索跳转：以目标消息为锚点拉取它之前的历史，
+     * 再把目标消息本身（来自搜索结果里服务端返回的数据）补在末尾并滚动到该位置。
+     */
+    private fun loadAroundTarget(targetId: String) {
+        lifecycleScope.launch {
+            try {
+                val list = Api.listMessages(chatId, chatType, PAGE_SIZE, targetId)
+                if (list.size < PAGE_SIZE) hasMore = false
+                messageAdapter.submitAll(list.reversed())
+                val target = ChatMsg(
+                    msgId = targetId,
+                    sender = Sender(
+                        chatId = "",
+                        chatType = ChatType.USER,
+                        name = intent.getStringExtra(EXTRA_TARGET_NAME).orEmpty(),
+                        avatarUrl = intent.getStringExtra(EXTRA_TARGET_AVATAR).orEmpty()
+                    ),
+                    contentType = ContentType.TEXT,
+                    content = MsgContent(text = intent.getStringExtra(EXTRA_TARGET_TEXT).orEmpty()),
+                    sendTimestampMs = intent.getLongExtra(EXTRA_TARGET_TIME, 0L),
+                    chatId = chatId,
+                    chatType = chatType
+                )
+                messageAdapter.append(target)
+                scrollToBottom()
+                toast("已跳转到搜索结果")
+            } catch (e: Exception) {
+                toast("定位消息失败: ${e.message}")
+                // 失败时退回普通最新消息，避免空白页
+                intent.removeExtra(EXTRA_TARGET_MSG_ID)
+                loadInitial()
             }
         }
     }
@@ -154,6 +237,13 @@ class ChatActivity : AppCompatActivity() {
 
     private fun setupInput() {
         binding.btnQuoteCancel.setOnClickListener { clearQuote() }
+        binding.btnChatSearch.setOnClickListener {
+            startActivity(
+                Intent(this, ChatSearchActivity::class.java)
+                    .putExtra(ChatSearchActivity.EXTRA_CHAT_ID, chatId)
+                    .putExtra(ChatSearchActivity.EXTRA_CHAT_TYPE, chatType)
+            )
+        }
         binding.btnSettings.setOnClickListener {
             if (chatType == ChatType.GROUP) {
                 startActivity(Intent(this, GroupSettingsActivity::class.java)
@@ -163,12 +253,27 @@ class ChatActivity : AppCompatActivity() {
             }
         }
         binding.btnSend.setOnClickListener { sendText() }
+        applyEnterSendMode()
         binding.etInput.setOnEditorActionListener { _, actionId, event ->
-            val send = actionId == EditorInfo.IME_ACTION_SEND ||
+            val enter = actionId == EditorInfo.IME_ACTION_SEND ||
                 (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
-            if (send) { sendText(); true } else false
+            if (!enter) return@setOnEditorActionListener false
+            if (Prefs.enterToSend) {
+                sendText()
+                true
+            } else {
+                // 关闭「回车发送」：回车作为换行，交给输入框自己处理
+                false
+            }
         }
         binding.btnSticker.setOnClickListener { toggleStickerPanel() }
+        binding.btnAttachImage.setOnClickListener { pickImage.launch("image/*") }
+        binding.btnAttachVideo.setOnClickListener { pickVideo.launch("video/*") }
+        binding.btnRecord.setOnClickListener {
+            if (recorder != null) stopRecordingAndSend() else ensureRecordPermission()
+        }
+        binding.btnRecordSend.setOnClickListener { stopRecordingAndSend() }
+        binding.btnRecordCancel.setOnClickListener { cancelRecording() }
 
         stickerAdapter = StickerAdapter(
             onEmoji = { insertEmoji(it) },
@@ -180,6 +285,54 @@ class ChatActivity : AppCompatActivity() {
         // Tab 切换：遥控器 D-pad 或点击确定键都可切
         binding.tabEmoji.setOnClickListener { switchStickerTab(StickerAdapter.TAB_EMOJI) }
         binding.tabFav.setOnClickListener { switchStickerTab(StickerAdapter.TAB_FAV) }
+    }
+
+    /** 按「回车发送」开关调整输入框：开启时单行+回车发送，关闭时多行+回车换行 */
+    private fun applyEnterSendMode() {
+        val enterSend = Prefs.enterToSend
+        binding.etInput.isSingleLine = enterSend
+        binding.etInput.maxLines = if (enterSend) 1 else 3
+        binding.etInput.inputType = if (enterSend) {
+            android.text.InputType.TYPE_CLASS_TEXT
+        } else {
+            android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        }
+        binding.etInput.imeOptions = if (enterSend) {
+            EditorInfo.IME_ACTION_SEND
+        } else {
+            EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_ENTER_ACTION
+        }
+        binding.etInput.hint = if (enterSend) "输入消息" else "输入消息（回车换行）"
+    }
+
+    /** 自定义聊天背景：铺满 + 可读性蒙层；未设置则隐藏，露出主题底色 */
+    private fun applyChatBackground() {
+        val path = Prefs.chatBackgroundPath
+        val file = if (path.isEmpty()) null else File(path)
+        if (file != null && file.exists()) {
+            binding.ivChatBg.setImageBitmap(decodeBg(file))
+            binding.ivChatBg.visibility = View.VISIBLE
+            binding.vChatScrim.visibility = View.VISIBLE
+        } else {
+            binding.ivChatBg.setImageDrawable(null)
+            binding.ivChatBg.visibility = View.GONE
+            binding.vChatScrim.visibility = View.GONE
+        }
+    }
+
+    /** 采样解码，避免大图直接进内存（1GB 运存设备优先） */
+    private fun decodeBg(file: File): android.graphics.Bitmap? {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0) return null
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 1280) sample *= 2
+        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+        return runCatching {
+            android.graphics.BitmapFactory.decodeFile(file.absolutePath, opts)
+        }.getOrNull()
     }
 
     /** Emoji 插入到输入框光标处 */
@@ -272,6 +425,162 @@ class ChatActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 toast("发送失败: ${e.message}")
             }
+        }
+    }
+
+    // ---------- 图片 / 视频 / 语音 ----------
+
+    /** 串行上传：同一时刻只允许一个文件在传，避免低内存设备并发上传 OOM */
+    private fun queueUpload(hint: String, block: suspend () -> Unit) {
+        if (uploading) {
+            toast("还有文件正在上传，请稍候")
+            return
+        }
+        uploading = true
+        toast(hint)
+        lifecycleScope.launch {
+            try {
+                block()
+            } catch (e: Exception) {
+                toast("发送失败: ${e.message}")
+            } finally {
+                uploading = false
+            }
+        }
+    }
+
+    private fun sendImage(uri: Uri) {
+        queueUpload("图片上传中…") {
+            val dir = File(cacheDir, "outgoing")
+            val src = withContext(Dispatchers.IO) {
+                MediaPrep.copyToDir(this@ChatActivity, uri, dir, "image.jpg")
+            }
+            try {
+                val img = withContext(Dispatchers.IO) { MediaPrep.compressImage(src, dir) }
+                try {
+                    val key = Qiniu.upload(img.file, Api.qiniuToken(""))
+                    val content = MsgContent(imageUrl = key, width = img.width, height = img.height)
+                    val msgId = Api.sendMessage(chatId, chatType, ContentType.IMAGE, content)
+                    appendLocal(msgId, ContentType.IMAGE, content)
+                } finally {
+                    img.file.delete()
+                }
+            } finally {
+                src.delete()
+            }
+        }
+    }
+
+    private fun sendVideo(uri: Uri) {
+        queueUpload("视频上传中…") {
+            val dir = File(cacheDir, "outgoing")
+            val src = withContext(Dispatchers.IO) {
+                MediaPrep.copyToDir(this@ChatActivity, uri, dir, "video.mp4")
+            }
+            try {
+                // 服务端普通用户视频上限 40MB，超限直接拦下，避免传完才失败
+                if (src.length() > 40L * 1024 * 1024) throw IOException("视频超过 40MB，无法发送")
+                val meta = withContext(Dispatchers.IO) { MediaPrep.videoMeta(src) }
+                val key = Qiniu.upload(src, Api.qiniuToken("-video"))
+                val content = MsgContent(
+                    videoUrl = key,
+                    videoTime = meta.durationSec,
+                    fileName = src.name,
+                    width = meta.width,
+                    height = meta.height
+                )
+                val msgId = Api.sendMessage(chatId, chatType, ContentType.VIDEO, content)
+                appendLocal(msgId, ContentType.VIDEO, content)
+            } finally {
+                src.delete()
+            }
+        }
+    }
+
+    private fun ensureRecordPermission() {
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        if (granted) startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun startRecording() {
+        if (recorder != null) return
+        val dir = File(cacheDir, "outgoing").apply { mkdirs() }
+        val file = File(dir, "voice_${System.currentTimeMillis()}.m4a")
+        try {
+            val r = MediaRecorder()
+            r.setAudioSource(MediaRecorder.AudioSource.MIC)
+            r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            r.setAudioEncodingBitRate(64000)
+            r.setAudioSamplingRate(44100)
+            r.setOutputFile(file.absolutePath)
+            r.prepare()
+            r.start()
+            recorder = r
+            recordFile = file
+            recordStartMs = SystemClock.elapsedRealtime()
+            binding.llRecording.visibility = View.VISIBLE
+            binding.btnRecord.text = "停止"
+            binding.tvRecording.text = "录音中… 00:00"
+            // 60 秒上限，到时自动发送
+            recordTimer = object : CountDownTimer(60_000, 1000) {
+                override fun onTick(msUntilFinished: Long) {
+                    val sec = 60 - (msUntilFinished / 1000).toInt()
+                    binding.tvRecording.text = "录音中… %02d:%02d".format(sec / 60, sec % 60)
+                }
+
+                override fun onFinish() {
+                    stopRecordingAndSend()
+                }
+            }.start()
+        } catch (e: Exception) {
+            toast("无法开始录音: ${e.message}")
+            stopRecorder()
+            file.delete()
+        }
+    }
+
+    private fun stopRecordingAndSend() {
+        val file = recordFile
+        val seconds = ((SystemClock.elapsedRealtime() - recordStartMs) / 1000).toInt()
+        stopRecorder()
+        if (file == null || !file.exists() || file.length() < 1024) {
+            file?.delete()
+            toast("录音时间太短")
+            return
+        }
+        queueUpload("语音上传中…") {
+            try {
+                val key = Qiniu.upload(file, Api.qiniuToken("-audio"))
+                val content = MsgContent(audioUrl = key, audioTime = seconds.coerceIn(1, 60))
+                val msgId = Api.sendMessage(chatId, chatType, ContentType.AUDIO, content)
+                appendLocal(msgId, ContentType.AUDIO, content)
+            } finally {
+                file.delete()
+            }
+        }
+    }
+
+    private fun cancelRecording() {
+        val file = recordFile
+        stopRecorder()
+        file?.delete()
+    }
+
+    private fun stopRecorder() {
+        recordTimer?.cancel()
+        recordTimer = null
+        recorder?.let { r ->
+            runCatching { r.stop() }
+            runCatching { r.release() }
+        }
+        recorder = null
+        recordFile = null
+        if (this::binding.isInitialized) {
+            binding.llRecording.visibility = View.GONE
+            binding.btnRecord.text = "语音"
         }
     }
 
@@ -376,6 +685,18 @@ class ChatActivity : AppCompatActivity() {
         if (canRecall) {
             actions.add("撤回" to { recallMsg(m) })
         }
+        // 编辑：仅自己发送、未撤回的纯文本消息（其他类型编辑会改变消息语义，服务端也会拒绝）
+        if (!m.isRecalled && m.msgId.isNotEmpty() && MessageAdapter.isOwn(m) && m.contentType == ContentType.TEXT) {
+            actions.add("编辑" to { showEditMessage(m) })
+        }
+        if (!m.isRecalled && m.msgId.isNotEmpty()) {
+            actions.add("编辑记录" to { showEditRecords(m) })
+        }
+        // 删除：仅自己发送的消息
+        if (MessageAdapter.isOwn(m) && m.msgId.isNotEmpty()) {
+            actions.add("删除" to { confirmDeleteMessage(m) })
+        }
+        actions.add("举报会话" to { showReportChat(m) })
         if (actions.isEmpty()) return
         AlertDialog.Builder(this)
             .setTitle("消息操作")
@@ -481,6 +802,116 @@ class ChatActivity : AppCompatActivity() {
                 toast("撤回失败: ${e.message}")
             }
         }
+    }
+
+    // ---------- 编辑 / 删除 / 举报 ----------
+
+    private fun showEditMessage(m: ChatMsg) {
+        val input = android.widget.EditText(this).apply {
+            setText(m.content.text)
+            setSelection(text.length)
+            minLines = 2
+            maxLines = 6
+            setPadding(32, 24, 32, 24)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("编辑消息")
+            .setView(input)
+            .setPositiveButton("保存") { _, _ ->
+                val text = input.text.toString().trim()
+                if (text.isEmpty()) { toast("内容不能为空"); return@setPositiveButton }
+                if (text == m.content.text) return@setPositiveButton
+                lifecycleScope.launch {
+                    try {
+                        Api.editMessage(m.msgId, chatId, chatType, ContentType.TEXT, MsgContent(text = text))
+                        val updated = m.copy(
+                            content = MsgContent(text = text),
+                            editTimestamp = System.currentTimeMillis()
+                        )
+                        messageAdapter.applyEdit(updated)
+                        toast("已保存")
+                    } catch (e: Exception) {
+                        toast("编辑失败: ${e.message}")
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showEditRecords(m: ChatMsg) {
+        lifecycleScope.launch {
+            try {
+                val (records, _) = Api.msgEditRecords(m.msgId)
+                if (records.isEmpty()) { toast("暂无编辑记录"); return@launch }
+                val text = records.joinToString("\n\n") { rec ->
+                    val body = extractOldText(rec.contentOld)
+                    "${formatRecordTime(rec.msgTime)}\n$body"
+                }
+                AlertDialog.Builder(this@ChatActivity)
+                    .setTitle("编辑记录（共 ${records.size} 条）")
+                    .setMessage(text)
+                    .setPositiveButton("关闭", null)
+                    .show()
+            } catch (e: Exception) {
+                toast("获取编辑记录失败: ${e.message}")
+            }
+        }
+    }
+
+    private fun extractOldText(raw: String): String {
+        if (raw.isEmpty()) return "(空)"
+        return runCatching {
+            val o = org.json.JSONObject(raw)
+            o.optString("text").ifEmpty {
+                o.keys().asSequence().joinToString(" ") { k -> "$k=${o.optString(k)}" }
+            }
+        }.getOrElse { raw }
+    }
+
+    private fun formatRecordTime(ms: Long): String =
+        if (ms <= 0) "" else java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(ms))
+
+    private fun confirmDeleteMessage(m: ChatMsg) {
+        AlertDialog.Builder(this)
+            .setTitle("删除消息")
+            .setMessage("删除后本会话内将不再显示这条消息，确定删除？")
+            .setPositiveButton("删除") { _, _ ->
+                lifecycleScope.launch {
+                    try {
+                        Api.deleteMessage(chatId, m.msgId, chatType)
+                        messageAdapter.remove(m.msgId)
+                        toast("已删除")
+                    } catch (e: Exception) {
+                        toast("删除失败: ${e.message}")
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showReportChat(m: ChatMsg) {
+        val reasons = arrayOf(
+            "色情低俗", "时政不时消息", "垃圾广告", "青少年不易", "辱骂攻击",
+            "侵犯权益", "违法犯罪", "开盒网暴", "其他"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("举报会话")
+            .setItems(reasons) { _, which ->
+                lifecycleScope.launch {
+                    try {
+                        val content = m.content.text.ifEmpty { "[非文本消息]" }
+                        Api.reportChat(chatId, chatType, chatName, content, reasons[which])
+                        toast("举报已提交")
+                    } catch (e: Exception) {
+                        toast("举报失败: ${e.message}")
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()

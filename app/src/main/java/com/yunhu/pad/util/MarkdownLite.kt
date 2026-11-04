@@ -35,7 +35,12 @@ object MarkdownLite {
      * 转为带样式的 CharSequence（标题/加粗/斜体/删除线/行内代码/引用/列表/链接）。
      * 仅使用文本 span，不加载任何图片，内存占用低。
      */
-    fun toSpanned(src: String, baseSizePx: Int, onLink: (String) -> Unit = {}): CharSequence {
+    fun toSpanned(
+        src: String,
+        baseSizePx: Int,
+        linkColor: Int = 0xFF4FC3F7.toInt(),
+        onLink: (String) -> Unit = {}
+    ): CharSequence {
         val sb = SpannableStringBuilder()
         src.lineSequence().forEach { raw ->
             var line = raw
@@ -58,15 +63,15 @@ object MarkdownLite {
                 val quote = Regex("^>\\s?(.*)$").find(line)
                 if (quote != null) {
                     sb.append("▎ ")
-                    sb.append(renderInline(quote.groupValues[1], onLink))
+                    sb.append(renderInline(quote.groupValues[1], onLink, linkColor))
                     sb.setSpan(QuoteSpan(), start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 } else {
                     val list = Regex("^\\s*[-*+]\\s+(.+)$").find(line)
                     if (list != null) {
                         sb.append("• ")
-                        sb.append(renderInline(list.groupValues[1], onLink))
+                        sb.append(renderInline(list.groupValues[1], onLink, linkColor))
                     } else {
-                        sb.append(renderInline(line, onLink))
+                        sb.append(renderInline(line, onLink, linkColor))
                     }
                 }
             }
@@ -76,7 +81,11 @@ object MarkdownLite {
     }
 
     /** 行内样式：加粗/斜体/删除线/代码/链接 */
-    private fun renderInline(text: String, onLink: (String) -> Unit): CharSequence {
+    private fun renderInline(
+        text: String,
+        onLink: (String) -> Unit,
+        linkColor: Int = 0xFF4FC3F7.toInt()
+    ): CharSequence {
         val out = SpannableStringBuilder()
         var i = 0
         while (i < text.length) {
@@ -129,7 +138,7 @@ object MarkdownLite {
                             out.setSpan(object : android.text.style.ClickableSpan() {
                                 override fun onClick(widget: View) { onLink(url) }
                                 override fun updateDrawState(ds: android.text.TextPaint) {
-                                    ds.color = 0xFF4FC3F7.toInt()
+                                    ds.color = linkColor
                                     ds.isUnderlineText = true
                                 }
                             }, s, out.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)

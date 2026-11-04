@@ -99,13 +99,34 @@ class ProtoReader(private val data: ByteArray) {
     fun skip(wire: Int) {
         when (wire) {
             0 -> readVarint()
-            1 -> pos += 8
+            1 -> skipFixed(8)
             2 -> {
                 val l = readVarint().toInt()
+                require(l >= 0 && pos + l <= data.size) { "bad length $l" }
                 pos += l
             }
-            5 -> pos += 4
+            3 -> {
+                // proto2 group 起始：递归读到匹配的 end-group，避免把 group 内容当成普通 tag
+                while (true) {
+                    if (!hasMore()) throw IllegalStateException("unexpected eof in group")
+                    val tag = readTag()
+                    when (tag and 7) {
+                        3 -> skip(3)
+                        4 -> return
+                        else -> skip(tag and 7)
+                    }
+                }
+            }
+            // end-group：由外层 skip(3) 消费；出现在普通字段位置说明报文边界异常，
+            // 这里直接忽略当前 tag，继续按 tag 结构解析，避免整条消息解析失败。
+            4 -> return
+            5 -> skipFixed(4)
             else -> throw IllegalStateException("unsupported wire type $wire")
         }
+    }
+
+    private fun skipFixed(n: Int) {
+        require(pos + n <= data.size) { "bad fixed length" }
+        pos += n
     }
 }

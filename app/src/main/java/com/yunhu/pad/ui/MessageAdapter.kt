@@ -40,12 +40,13 @@ class MessageAdapter(
 
         /** 可送入播放器的媒体直链（视频 / 音频文件 / 语音消息），不可播放返回空串 */
         fun playableUrlOf(m: ChatMsg): String = when (m.contentType) {
-            ContentType.VIDEO -> Api.fullImageUrl(m.content.videoUrl)
-            ContentType.AUDIO -> Api.fullImageUrl(
-                m.content.audioUrl.ifEmpty { m.content.fileUrl.ifEmpty { m.content.videoUrl } }
+            ContentType.VIDEO -> Api.fullMediaUrl(m.content.videoUrl, ContentType.VIDEO)
+            ContentType.AUDIO -> Api.fullMediaUrl(
+                m.content.audioUrl.ifEmpty { m.content.fileUrl.ifEmpty { m.content.videoUrl } },
+                ContentType.AUDIO
             )
             ContentType.FILE -> if (isAudioFile(m.content.fileName))
-                Api.fullImageUrl(m.content.fileUrl.ifEmpty { m.content.videoUrl })
+                Api.fullMediaUrl(m.content.fileUrl.ifEmpty { m.content.videoUrl }, ContentType.FILE)
             else ""
             else -> ""
         }
@@ -119,6 +120,15 @@ class MessageAdapter(
         if (i >= 0) {
             items[i].recallTimestamp = System.currentTimeMillis()
             notifyItemChanged(i)
+        }
+    }
+
+    /** 本地删除一条消息（服务端 /v1/msg/delete 成功后调用） */
+    fun remove(msgId: String) {
+        val i = items.indexOfFirst { it.msgId == msgId }
+        if (i >= 0) {
+            items.removeAt(i)
+            notifyItemRemoved(i)
         }
     }
 

@@ -1,9 +1,11 @@
 package com.yunhu.pad
 
 import android.app.Application
+import androidx.appcompat.app.AppCompatDelegate
 import coil.Coil
 import coil.ImageLoader
 import com.yunhu.pad.api.WsClient
+import com.yunhu.pad.util.Prefs
 import com.yunhu.pad.util.Session
 import okhttp3.OkHttpClient
 import java.security.KeyStore
@@ -30,7 +32,20 @@ class App : Application() {
         super.onCreate()
         instance = this
         Session.init(this)
+        Prefs.init(this)
+        applyNightMode()
         initImageLoader()
+        rebuildImageLoader()
+    }
+
+    /** 按本地设置应用深浅色模式：跟随系统 / 强制浅色 / 强制深色 */
+    fun applyNightMode() {
+        val mode = when (Prefs.themeMode) {
+            Prefs.THEME_LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
+            Prefs.THEME_DARK -> AppCompatDelegate.MODE_NIGHT_YES
+            else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+        }
+        AppCompatDelegate.setDefaultNightMode(mode)
     }
 
     /** 云湖图床需要 Referer 头，否则返回 403 */
@@ -55,22 +70,32 @@ class App : Application() {
                 chain.proceed(newReq)
             }
             .build()
-        val client = mediaClient
         // 内置 Emoji 字体：老电视系统缺少 Emoji 字形时也能正常显示
         androidx.emoji2.bundled.BundledEmojiCompatConfig(this).let {
             androidx.emoji2.text.EmojiCompat.init(it)
         }
-        // allowRgb565: 电视内存有限，图片解码内存减半，防 OOM 闪退
+    }
+
+    /**
+     * 按「动态头像」开关重建全局 ImageLoader。
+     * 关闭时不注册动图解码器，Coil 退回 BitmapFactory 解码首帧，头像即静态；
+     * 同时清掉旧 loader 的内存缓存，避免已缓存的动图继续播放。
+     */
+    fun rebuildImageLoader() {
+        val dynamic = Prefs.dynamicAvatar
         Coil.setImageLoader(
             ImageLoader.Builder(this)
-                .okHttpClient(client)
+                .okHttpClient(mediaClient)
+                // allowRgb565: 电视内存有限，图片解码内存减半，防 OOM 闪退
                 .components {
                     // GIF 动图解码：API28+ 用系统 ImageDecoder，低版本用 GifDecoder；
                     // 配合 allowRgb565 与按视图尺寸采样，控制动图内存占用
-                    if (android.os.Build.VERSION.SDK_INT >= 28) {
-                        add(coil.decode.ImageDecoderDecoder.Factory())
-                    } else {
-                        add(coil.decode.GifDecoder.Factory())
+                    if (dynamic) {
+                        if (android.os.Build.VERSION.SDK_INT >= 28) {
+                            add(coil.decode.ImageDecoderDecoder.Factory())
+                        } else {
+                            add(coil.decode.GifDecoder.Factory())
+                        }
                     }
                 }
                 .allowRgb565(true)

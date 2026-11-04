@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -31,6 +32,15 @@ class PostListActivity : AppCompatActivity() {
     private var page = 1
     private var total = Int.MAX_VALUE
     private var loading = false
+
+    private val createPost = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            // 发布成功：回到第一页重新拉取，新文章在最前
+            page = 1
+            total = Int.MAX_VALUE
+            loadPage()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,6 +74,15 @@ class PostListActivity : AppCompatActivity() {
         })
 
         loadPage()
+        binding.btnPublish.visibility =
+            if (mode == "ba" && baId > 0) View.VISIBLE else View.GONE
+        binding.btnPublish.setOnClickListener {
+            createPost.launch(
+                Intent(this, PostCreateActivity::class.java)
+                    .putExtra(PostCreateActivity.EXTRA_BA_ID, baId)
+                    .putExtra(PostCreateActivity.EXTRA_BA_NAME, binding.tvTitle.text.toString())
+            )
+        }
     }
 
     private fun loadPage() {

@@ -8,6 +8,7 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -43,10 +44,11 @@ class PostDetailActivity : AppCompatActivity() {
 
         postId = intent.getLongExtra(EXTRA_POST_ID, 0)
 
-        commentAdapter = CommentAdapter()
+        commentAdapter = CommentAdapter { comment -> showReportComment(comment) }
         binding.rvComments.layoutManager = LinearLayoutManager(this)
         binding.rvComments.adapter = commentAdapter
 
+        binding.btnPostMore.setOnClickListener { showPostMenu() }
         binding.btnLike.setOnClickListener { doLike() }
         binding.btnCollect.setOnClickListener { doCollect() }
         binding.btnReward.setOnClickListener { showRewardDialog() }
@@ -77,7 +79,11 @@ class PostDetailActivity : AppCompatActivity() {
                 // Markdown 文章：用轻量 span 渲染（仅文本样式，不产生图片 bitmap），图片单独渲染
                 if (post.contentType == 2) {
                     val baseSize = (17 * resources.displayMetrics.density).toInt()
-                    binding.tvPostContent.text = MarkdownLite.toSpanned(post.content, baseSize) { url ->
+                    binding.tvPostContent.text = MarkdownLite.toSpanned(
+                        post.content,
+                        baseSize,
+                        androidx.core.content.ContextCompat.getColor(this@PostDetailActivity, com.yunhu.pad.R.color.accent)
+                    ) { url ->
                         if (!com.yunhu.pad.util.YunhuRouter.open(this@PostDetailActivity, url)) {
                             // 非 yunhu:// 链接尝试用系统浏览器打开
                             runCatching { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
@@ -241,4 +247,102 @@ class PostDetailActivity : AppCompatActivity() {
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+
+    // ---------- 编辑 / 删除 / 举报 ----------
+
+    private fun showPostMenu() {
+        val post = currentPost
+        if (post == null) { toast("文章信息未加载完成"); return }
+        val mine = post.senderId.isNotEmpty() && post.senderId == com.yunhu.pad.util.Session.userId
+        val actions = mutableListOf<Pair<String, () -> Unit>>()
+        if (mine) {
+            actions.add("编辑文章" to { openEdit(post) })
+            actions.add("删除文章" to { confirmDelete(post) })
+        }
+        actions.add("举报文章" to { showReportPost(post) })
+        AlertDialog.Builder(this)
+            .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
+            .show()
+    }
+
+    /** 编辑文章返回后刷新详情 */
+    private val editLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) loadDetail()
+    }
+
+    private fun openEdit(post: Api.Post) {
+        editLauncher.launch(
+            android.content.Intent(this, PostCreateActivity::class.java)
+                .putExtra(PostCreateActivity.EXTRA_BA_ID, post.baId)
+                .putExtra(PostCreateActivity.EXTRA_POST_ID, post.id)
+                .putExtra(PostCreateActivity.EXTRA_POST_TITLE, post.title)
+                .putExtra(PostCreateActivity.EXTRA_POST_CONTENT, post.content)
+                .putExtra(PostCreateActivity.EXTRA_POST_TYPE, post.contentType)
+        )
+    }
+
+    private fun confirmDelete(post: Api.Post) {
+        AlertDialog.Builder(this)
+            .setTitle("删除文章")
+            .setMessage("删除后无法恢复，确定删除？")
+            .setPositiveButton("删除") { _, _ ->
+                lifecycleScope.launch {
+                    try {
+                        Api.deletePost(post.id)
+                        toast("已删除")
+                        setResult(RESULT_OK)
+                        finish()
+                    } catch (e: Exception) {
+                        toast("删除失败: ${e.message}")
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private val reportReasons = arrayOf(
+        "色情低俗", "实证不良信息", "垃圾广告", "青少年不宜", "辱骂攻击",
+        "侵犯权益", "违法犯罪", "开盒网暴", "其他"
+    )
+
+    private fun showReportPost(post: Api.Post) {
+        AlertDialog.Builder(this)
+            .setTitle("举报文章")
+            .setItems(reportReasons) { _, which ->
+                lifecycleScope.launch {
+                    try {
+                        Api.reportCommunity(
+                            1, post.id, "举报文章：《${post.title}》", reportReasons[which],
+                            "yunhu://post/${post.id}"
+                        )
+                        toast("举报已提交")
+                    } catch (e: Exception) {
+                        toast("举报失败: ${e.message}")
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showReportComment(c: Api.Comment) {
+        AlertDialog.Builder(this)
+            .setTitle("举报评论")
+            .setItems(reportReasons) { _, which ->
+                lifecycleScope.launch {
+                    try {
+                        Api.reportCommunity(
+                            2, c.id, "举报评论：${c.content.take(80)}", reportReasons[which],
+                            "yunhu://post/$postId"
+                        )
+                        toast("举报已提交")
+                    } catch (e: Exception) {
+                        toast("举报失败: ${e.message}")
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
 }

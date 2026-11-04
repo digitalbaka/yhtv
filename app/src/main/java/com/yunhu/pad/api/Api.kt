@@ -22,6 +22,10 @@ object Api {
     const val WEB_BASE = "https://chat-web-go.jwzhd.com"
     const val WS_URL = "wss://chat-ws-go.jwzhd.com/ws"
     const val IMG_BASE = "https://chat-img.jwznb.com/"
+    // 文档「音频路由 / 视频路由 / 文件路由」：不同类型走不同域名，见 /api/ 首页说明
+    const val VIDEO_BASE = "https://chat-video1.jwznb.com/"
+    const val AUDIO_BASE = "https://chat-audio1.jwznb.com/"
+    const val FILE_BASE = "https://chat-file.jwznb.com/"
 
     private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
     private val PROTO_MEDIA = "application/x-protobuf".toMediaType()
@@ -215,6 +219,38 @@ object Api {
         return IMG_BASE + url
     }
 
+    /**
+     * 媒体完整 URL：按消息类型补全对应路由。
+     * 文档里 video_url / audio_url 允许存「key」形式（如 123.mp4），
+     * 不同类型的 key 分别落在 视频 / 音频 / 文件 路由下；
+     * 已经是 http(s) 直链的历史消息原样返回，不受影响。
+     */
+    fun fullMediaUrl(url: String, contentType: Int): String {
+        if (url.isEmpty()) return ""
+        if (url.startsWith("http://") || url.startsWith("https://")) return url
+        val base = when (contentType) {
+            ContentType.VIDEO -> VIDEO_BASE
+            ContentType.AUDIO -> AUDIO_BASE
+            ContentType.FILE -> FILE_BASE
+            else -> IMG_BASE
+        }
+        return base + url
+    }
+
+    // ---------- 媒体上传 ----------
+
+    /**
+     * 七牛上传凭证。不同媒体走不同接口：
+     * 图片 /v1/misc/qiniu-token、语音 -audio、视频 -video、文件 2
+     */
+    suspend fun qiniuToken(kind: String): String = withContext(Dispatchers.IO) {
+        val resp = getJson("$BASE/v1/misc/qiniu-token$kind")
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取上传凭证失败"))
+        val token = resp.optJSONObject("data")?.optString("token").orEmpty()
+        if (token.isEmpty()) throw ApiException(-1, "上传凭证为空")
+        token
+    }
+
     // ---------- 社区 ----------
 
     data class Ba(
@@ -351,6 +387,28 @@ object Api {
             replies = replyList
         )
     }
+
+    /**
+     * 发布文章。contentType：1-纯文本，2-Markdown。
+     * 文档里返回字段名有误（示例写成 audioUrl），这里做兼容：优先 postId，取不到也不影响发布结果。
+     */
+    suspend fun createPost(baId: Long, title: String, content: String, contentType: Int): Long =
+        withContext(Dispatchers.IO) {
+            val resp = postJson(
+                "$BASE/v1/community/posts/create",
+                JSONObject()
+                    .put("baId", baId)
+                    .put("groupId", "")
+                    .put("title", title)
+                    .put("content", content)
+                    .put("contentType", contentType)
+                    .put("draftId", 0)
+            )
+            if (resp.optInt("code", -1) != 1) {
+                throw ApiException(resp.optInt("code"), resp.optString("msg", "发布失败"))
+            }
+            resp.optJSONObject("data")?.optLong("postId", 0) ?: 0
+        }
 
     /** 发表评论。commentId=0 表示直接评论文章 */
     suspend fun commentPost(postId: Long, content: String, commentId: Long = 0) = withContext(Dispatchers.IO) {
@@ -632,5 +690,404 @@ object Api {
             JSONObject().put("groupId", groupId).put("userId", Session.userId)
         )
         if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "退出失败"))
+    }
+
+    // ---------- 聊天记录搜索 ----------
+
+    data class ChatSearchHit(
+        val id: String,
+        val sequence: Long,
+        val name: String,
+        val avatarUrl: String,
+        val content: String,
+        val type: Int,
+        val time: Long,
+        val timeText: String
+    )
+
+    /**
+     * 会话内聊天记录搜索。文档：POST /v1/search/chat-search
+     * type: all-全部，1-文本，3-markdown，4-文件，6-文章，7-表情，8-html
+     * time：只返回该时间戳内的消息，用于「加载更多」按时间向前翻页
+     */
+    suspend fun chatSearch(
+        word: String,
+        chatId: String,
+        chatType: Int,
+        type: String = "all",
+        size: Int = 30,
+        time: Long = 9999999999999L
+    ): List<ChatSearchHit> = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/search/chat-search",
+            JSONObject()
+                .put("word", word)
+                .put("chatId", chatId)
+                .put("chatType", chatType)
+                .put("type", type)
+                .put("size", size)
+                .put("time", time)
+                .put("direction", 1)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "搜索失败"))
+        val arr = resp.optJSONObject("data")?.optJSONArray("list") ?: return@withContext emptyList()
+        (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.let { o ->
+                ChatSearchHit(
+                    id = o.optString("id"),
+                    sequence = o.optLong("sequence"),
+                    name = o.optString("name"),
+                    avatarUrl = o.optString("avatarUrl"),
+                    content = o.optString("content"),
+                    type = o.optString("type").toIntOrNull() ?: 0,
+                    time = o.optLong("time"),
+                    timeText = o.optString("timeText")
+                )
+            }
+        }
+    }
+
+    // ---------- 消息编辑 / 删除 ----------
+
+    /** 编辑消息：与发送共用 SendMsgRequest，msg_id 换成要编辑的消息 */
+    suspend fun editMessage(msgId: String, chatId: String, chatType: Int, contentType: Int, content: MsgContent) =
+        withContext(Dispatchers.IO) {
+            val data = postProto(
+                "$BASE/v1/msg/edit-message",
+                Requests.sendMessage(msgId, chatId, chatType, contentType, content)
+            )
+            val st = Responses.status(data)
+            if (st.code != 1) throw ApiException(st.code, if (st.msg.isNotEmpty()) st.msg else "编辑失败")
+        }
+
+    /** 长按删除消息（非撤回） */
+    suspend fun deleteMessage(chatId: String, msgId: String, chatType: Int) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/msg/delete",
+            JSONObject().put("chatId", chatId).put("msgId", msgId).put("chatType", chatType)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "删除失败"))
+    }
+
+    data class MsgEditRecord(
+        val id: Long,
+        val contentType: Int,
+        /** 历史内容，服务端返回转义后的 JSON（如 {"text":"..."}） */
+        val contentOld: String,
+        val msgTime: Long
+    )
+
+    /** 消息编辑历史，返回 (记录, 总数) */
+    suspend fun msgEditRecords(msgId: String, size: Int = 10, page: Int = 1): Pair<List<MsgEditRecord>, Int> =
+        withContext(Dispatchers.IO) {
+            val resp = postJson(
+                "$BASE/v1/msg/list-message-edit-record",
+                JSONObject().put("msgId", msgId).put("size", size).put("page", page)
+            )
+            if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取编辑记录失败"))
+            val data = resp.optJSONObject("data")
+            val arr = data?.optJSONArray("list") ?: return@withContext emptyList<MsgEditRecord>() to 0
+            val list = (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONObject(i)?.let { o ->
+                    MsgEditRecord(
+                        id = o.optLong("id"),
+                        contentType = o.optInt("contentType"),
+                        contentOld = o.optString("contentOld"),
+                        msgTime = o.optLong("msgTime")
+                    )
+                }
+            }
+            list to data.optInt("total")
+        }
+
+    // ---------- 首页置顶会话 ----------
+
+    data class Sticky(
+        val id: Long,
+        val chatId: String,
+        val chatType: Int,
+        val chatName: String,
+        val avatarUrl: String
+    )
+
+    suspend fun stickyList(): List<Sticky> = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/sticky/list", JSONObject())
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取置顶失败"))
+        val arr = resp.optJSONObject("data")?.optJSONArray("sticky") ?: return@withContext emptyList()
+        (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.let { o ->
+                Sticky(
+                    id = o.optLong("id"),
+                    chatId = o.optString("chatId"),
+                    chatType = o.optInt("chatType"),
+                    chatName = o.optString("chatName"),
+                    avatarUrl = o.optString("avatarUrl")
+                )
+            }
+        }
+    }
+
+    suspend fun stickyAdd(chatId: String, chatType: Int) = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/sticky/add", JSONObject().put("chatId", chatId).put("chatType", chatType))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "置顶失败"))
+    }
+
+    suspend fun stickyDelete(chatId: String, chatType: Int) = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/sticky/delete", JSONObject().put("chatId", chatId).put("chatType", chatType))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "取消置顶失败"))
+    }
+
+    suspend fun stickyTopping(id: Long) = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/sticky/topping", JSONObject().put("id", id))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "操作失败"))
+    }
+
+    // ---------- 群管理（禁言 / 标签 / 进阶设置） ----------
+
+    /** 禁言用户。seconds: 0-取消禁言，600/3600/21600/43200，-1-永久 */
+    suspend fun gagMember(groupId: String, userId: String, seconds: Int) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/group/gag-member",
+            JSONObject().put("groupId", groupId).put("userId", userId).put("gag", seconds)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "禁言操作失败"))
+    }
+
+    /** 群消息类型限制，type 为允许的类别列表（逗号分隔，如 "1,2,3"） */
+    suspend fun setMsgTypeLimit(groupId: String, type: String) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/group/msg-type-limit",
+            JSONObject().put("groupId", groupId).put("type", type)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "设置失败"))
+    }
+
+    suspend fun editGroupKeyword(groupId: String, keyword: String) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/group/edit-group-keyword",
+            JSONObject().put("groupId", groupId).put("keyword", keyword)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "设置群口令失败"))
+    }
+
+    /** 消息自动销毁：0-不删，90-90天，365-1年，730-2年 */
+    suspend fun setAutoDeleteMessage(groupId: String, days: Int) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/group/edit-auto-delete-message",
+            JSONObject().put("groupId", groupId).put("autoDeleteMessage", days)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "设置失败"))
+    }
+
+    suspend fun setStopMemberUpload(groupId: String, stop: Int) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/group/edit-stop-member-upload-group-file",
+            JSONObject().put("groupId", groupId).put("stopMemberUploadGroupFile", stop)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "设置失败"))
+    }
+
+    /** 加入群推荐开关：hide 0-不隐藏（参与推荐），1-隐藏 */
+    suspend fun setGroupSwitch(groupId: String, hide: Int) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/group/switch",
+            JSONObject().put("groupId", groupId).put("hide", hide)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "设置失败"))
+    }
+
+    data class GroupTag(
+        val id: Long,
+        val groupId: String,
+        val tag: String,
+        val color: String,
+        val desc: String,
+        val sort: Int
+    )
+
+    suspend fun groupTagList(groupId: String, size: Int = 50, page: Int = 1, tag: String = ""): List<GroupTag> =
+        withContext(Dispatchers.IO) {
+            val resp = postJson(
+                "$BASE/v1/group-tag/list",
+                JSONObject().put("groupId", groupId).put("size", size).put("page", page).put("tag", tag)
+            )
+            if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取群标签失败"))
+            val arr = resp.optJSONObject("data")?.optJSONArray("list") ?: return@withContext emptyList()
+            (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONObject(i)?.let { o ->
+                    GroupTag(
+                        id = o.optLong("id"),
+                        groupId = o.optString("groupId"),
+                        tag = o.optString("tag"),
+                        color = o.optString("color"),
+                        desc = o.optString("desc"),
+                        sort = o.optInt("sort")
+                    )
+                }
+            }
+        }
+
+    suspend fun createGroupTag(groupId: String, tag: String, color: String, desc: String = "", sort: Int = 0) =
+        withContext(Dispatchers.IO) {
+            val resp = postJson(
+                "$BASE/v1/group-tag/create",
+                JSONObject().put("groupId", groupId).put("tag", tag).put("color", color).put("desc", desc).put("sort", sort)
+            )
+            if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "创建标签失败"))
+        }
+
+    suspend fun editGroupTag(id: Long, groupId: String, tag: String, color: String, desc: String = "", sort: Int = 0) =
+        withContext(Dispatchers.IO) {
+            val resp = postJson(
+                "$BASE/v1/group-tag/edit",
+                JSONObject().put("id", id).put("groupId", groupId).put("tag", tag)
+                    .put("color", color).put("desc", desc).put("sort", sort)
+            )
+            if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "编辑标签失败"))
+        }
+
+    suspend fun deleteGroupTag(id: Long) = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/group-tag/delete", JSONObject().put("id", id))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "删除标签失败"))
+    }
+
+    suspend fun relateGroupTag(userId: String, tagId: Long) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/group-tag/relate",
+            JSONObject().put("userId", userId).put("tagGroupId", tagId)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "设置标签失败"))
+    }
+
+    suspend fun cancelGroupTag(userId: String, tagId: Long) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/group-tag/relate-cancel",
+            JSONObject().put("userId", userId).put("tagGroupId", tagId)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "取消标签失败"))
+    }
+
+    // ---------- 社区闭环：编辑 / 删除 / 草稿 / 搜索 / 举报 ----------
+
+    suspend fun editPost(postId: Long, title: String, content: String, contentType: Int) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/community/posts/edit",
+            JSONObject().put("postId", postId).put("title", title)
+                .put("content", content).put("contentType", contentType)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "编辑失败"))
+    }
+
+    suspend fun deletePost(postId: Long) = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/community/posts/delete", JSONObject().put("postId", postId))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "删除失败"))
+    }
+
+    /** 创建/更新草稿，draftId 非 0 时会先删除旧草稿；返回新草稿 ID */
+    suspend fun createDraft(baId: Long, title: String, content: String, contentType: Int, draftId: Long = 0): Long =
+        withContext(Dispatchers.IO) {
+            val resp = postJson(
+                "$BASE/v1/community/posts/create-draft",
+                JSONObject().put("baId", baId).put("title", title).put("content", content)
+                    .put("contentType", contentType).put("draftId", draftId)
+            )
+            if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "保存草稿失败"))
+            resp.optJSONObject("data")?.optLong("id", 0) ?: 0
+        }
+
+    /** 草稿详情：返回 (标题, 正文, 内容类型, 分区 ID) */
+    suspend fun getDraft(draftId: Long, baId: Long = 0): Api.Post? = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/community/posts/get-draft",
+            JSONObject().put("draftId", draftId).put("baId", baId)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取草稿失败"))
+        resp.optJSONObject("data")?.optJSONObject("posts")?.toPost()
+    }
+
+    suspend fun cancelDraft(draftId: Long) = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/community/posts/cancel-draft", JSONObject().put("draftId", draftId))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "删除草稿失败"))
+    }
+
+    /** 社区文章搜索 */
+    suspend fun communitySearch(keyword: String, size: Int = 20, page: Int = 1): Pair<List<Post>, Int> =
+        withContext(Dispatchers.IO) {
+            val resp = postJson(
+                "$BASE/v1/community/search",
+                JSONObject().put("typ", 3).put("keyword", keyword).put("size", size).put("page", page)
+            )
+            if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "搜索失败"))
+            val data = resp.optJSONObject("data")
+            val arr = data?.optJSONArray("posts")
+            val list = (0 until (arr?.length() ?: 0)).mapNotNull { arr?.optJSONObject(it)?.toPost() }
+            list to (data?.optInt("total") ?: list.size)
+        }
+
+    /** 举报文章 / 评论（community/report）。typ: 1-文章 2-评论 */
+    suspend fun reportCommunity(typ: Int, id: Long, content: String, reason: String, url: String = "") =
+        withContext(Dispatchers.IO) {
+            val resp = postJson(
+                "$BASE/v1/community/report",
+                JSONObject().put("typ", typ).put("id", id).put("content", content)
+                    .put("reason", reason).put("url", url)
+            )
+            if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "举报失败"))
+        }
+
+    /** 举报会话（report/create） */
+    suspend fun reportChat(
+        chatId: String, chatType: Int, chatName: String, content: String, reason: String, url: String = ""
+    ) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/report/create",
+            JSONObject().put("chatId", chatId).put("chatType", chatType).put("chatName", chatName)
+                .put("content", content).put("reason", reason).put("url", url)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "举报失败"))
+    }
+
+    // ---------- 账号自服务 ----------
+
+    /** 修改头像，url 必须是完整地址 */
+    suspend fun editAvatar(url: String) = withContext(Dispatchers.IO) {
+        val data = postProto("$BASE/v1/user/edit-avatar", ProtoWriter().string(2, url).toByteArray())
+        val st = Responses.status(data)
+        if (st.code != 1) throw ApiException(st.code, if (st.msg.isNotEmpty()) st.msg else "修改头像失败")
+    }
+
+    suspend fun bindEmail(email: String, captcha: String) = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/user/bing-email", JSONObject().put("email", email).put("captcha", captcha))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "绑定邮箱失败"))
+    }
+
+    suspend fun changeEmail(email: String, captcha: String) = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/user/change-email-check", JSONObject().put("email", email).put("captcha", captcha))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "更换邮箱失败"))
+    }
+
+    suspend fun forgetPassword(email: String, captcha: String, password: String) = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/user/forget-password",
+            JSONObject().put("email", email).put("captcha", captcha).put("password", password)
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "修改密码失败"))
+    }
+
+    /**
+     * 获取邮箱验证码。文档里 code/id 是人机验证参数，但没有说明校验码的获取方式，
+     * 这里如实传空，服务端若要求人机验证会返回可读错误由界面提示。
+     */
+    suspend fun emailVerificationCode(email: String, typ: String = "") = withContext(Dispatchers.IO) {
+        val resp = postJson(
+            "$BASE/v1/verification/get-email-verification-code",
+            JSONObject().put("email", email).put("typ", typ).put("code", "").put("id", "")
+        )
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "发送验证码失败"))
+    }
+
+    suspend fun deviceOffline(deviceId: String) = withContext(Dispatchers.IO) {
+        val resp = postJson("$BASE/v1/user/device-offline", JSONObject().put("deviceId", deviceId))
+        if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "下线失败"))
     }
 }

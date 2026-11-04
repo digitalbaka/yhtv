@@ -25,6 +25,18 @@
             android:textStyle="bold" />
 
         <Button
+            android:id="@+id/btn_chat_search"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/bg_button_focus"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="搜索"
+            android:textColor="@color/white"
+            android:textSize="15sp" />
+
+        <Button
             android:id="@+id/btn_settings"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
@@ -49,14 +61,34 @@
         android:layout_height="1dp"
         android:background="@color/panel_focus" />
 
-    <!-- 消息列表 -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rv_messages"
+    <!-- 消息列表（背景图铺底 + 可读性蒙层） -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        android:padding="14dp" />
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/iv_chat_bg"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="聊天背景"
+            android:scaleType="centerCrop"
+            android:visibility="gone" />
+
+        <View
+            android:id="@+id/v_chat_scrim"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/chat_bg_scrim"
+            android:visibility="gone" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_messages"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:padding="14dp" />
+    </FrameLayout>
 
     <!-- 表情面板：上方 Tab（Emoji / 收藏表情），下方网格 -->
     <LinearLayout
@@ -169,6 +201,49 @@
             android:textSize="14sp" />
     </LinearLayout>
 
+    <!-- 录音状态条 -->
+    <LinearLayout
+        android:id="@+id/ll_recording"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/panel"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="8dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tv_recording"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="录音中…"
+            android:textColor="@color/danger"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/btn_record_send"
+            android:layout_width="90dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_button_focus"
+            android:text="发送"
+            android:textColor="@color/white"
+            android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/btn_record_cancel"
+            android:layout_width="90dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="10dp"
+            android:background="@drawable/bg_button_focus"
+            android:text="取消"
+            android:textColor="@color/white"
+            android:textSize="15sp" />
+    </LinearLayout>
+
     <!-- 输入栏 -->
     <LinearLayout
         android:layout_width="match_parent"
@@ -178,13 +253,43 @@
         android:orientation="horizontal"
         android:padding="12dp">
 
+        <Button
+            android:id="@+id/btn_attach_image"
+            android:layout_width="72dp"
+            android:layout_height="52dp"
+            android:background="@drawable/bg_button_focus"
+            android:text="图片"
+            android:textColor="@color/white"
+            android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/btn_attach_video"
+            android:layout_width="72dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_button_focus"
+            android:text="视频"
+            android:textColor="@color/white"
+            android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/btn_record"
+            android:layout_width="72dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_button_focus"
+            android:text="语音"
+            android:textColor="@color/white"
+            android:textSize="15sp" />
+
         <EditText
             android:id="@+id/et_input"
             android:layout_width="0dp"
             android:layout_height="52dp"
             android:layout_weight="1"
+            android:layout_marginStart="8dp"
             android:background="@drawable/bg_input"
-            android:hint="按确认键输入消息"
+            android:hint="输入消息"
             android:imeOptions="actionSend"
             android:inputType="text"
             android:maxLines="1"
@@ -197,22 +302,22 @@
 
         <Button
             android:id="@+id/btn_sticker"
-            android:layout_width="90dp"
+            android:layout_width="80dp"
             android:layout_height="52dp"
-            android:layout_marginStart="10dp"
+            android:layout_marginStart="8dp"
             android:background="@drawable/bg_button_focus"
             android:text="表情"
             android:textColor="@color/white"
-            android:textSize="16sp" />
+            android:textSize="15sp" />
 
         <Button
             android:id="@+id/btn_send"
-            android:layout_width="90dp"
+            android:layout_width="80dp"
             android:layout_height="52dp"
-            android:layout_marginStart="10dp"
+            android:layout_marginStart="8dp"
             android:background="@drawable/bg_button_focus"
             android:text="发送"
             android:textColor="@color/white"
-            android:textSize="16sp" />
+            android:textSize="15sp" />
     </LinearLayout>
 </LinearLayout>

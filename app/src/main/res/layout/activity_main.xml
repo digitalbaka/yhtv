@@ -106,31 +106,49 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
-        <FrameLayout
+        <LinearLayout
             android:id="@+id/panel_conversations"
             android:layout_width="match_parent"
-            android:layout_height="match_parent">
+            android:layout_height="match_parent"
+            android:orientation="vertical">
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rv_conversations"
+            <Button
+                android:id="@+id/btn_global_search"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:clipToPadding="false"
-                android:padding="16dp" />
+                android:layout_height="48dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginTop="16dp"
+                android:background="@drawable/bg_button_focus"
+                android:text="搜索用户 / 群组 / 聊天记录 / 文章"
+                android:textColor="@color/white"
+                android:textSize="16sp" />
 
-            <TextView
-                android:id="@+id/tv_conversation_empty"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:background="@drawable/bg_item_focus"
-                android:focusable="true"
-                android:padding="20dp"
-                android:text="暂无会话（按确认键刷新）"
-                android:textColor="@color/text_secondary"
-                android:textSize="18sp"
-                android:visibility="gone" />
-        </FrameLayout>
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rv_conversations"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:clipToPadding="false"
+                    android:padding="16dp" />
+
+                <TextView
+                    android:id="@+id/tv_conversation_empty"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:background="@drawable/bg_item_focus"
+                    android:focusable="true"
+                    android:padding="20dp"
+                    android:text="暂无会话（按确认键刷新）"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="18sp"
+                    android:visibility="gone" />
+            </FrameLayout>
+        </LinearLayout>
 
         <LinearLayout
             android:id="@+id/panel_contacts"
@@ -235,6 +253,17 @@
                     android:text="我的"
                     android:textColor="@color/white"
                     android:textSize="16sp" />
+
+                <Button
+                    android:id="@+id/btn_community_search"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_button_focus"
+                    android:text="搜索文章"
+                    android:textColor="@color/white"
+                    android:textSize="16sp" />
             </LinearLayout>
 
             <!-- 「我的」模式下的功能入口 -->
@@ -288,6 +317,17 @@
                     android:layout_weight="1"
                     android:background="@drawable/bg_button_focus"
                     android:text="屏蔽用户"
+                    android:textColor="@color/white"
+                    android:textSize="15sp" />
+
+                <Button
+                    android:id="@+id/btn_my_drafts"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_button_focus"
+                    android:text="草稿箱"
                     android:textColor="@color/white"
                     android:textSize="15sp" />
             </LinearLayout>
@@ -390,6 +430,16 @@
                     android:textColor="@color/white"
                     android:textSize="16sp" />
             </LinearLayout>
+
+            <Button
+                android:id="@+id/btn_settings"
+                android:layout_width="240dp"
+                android:layout_height="52dp"
+                android:layout_marginTop="16dp"
+                android:background="@drawable/bg_button_focus"
+                android:text="设置"
+                android:textColor="@color/white"
+                android:textSize="18sp" />
 
             <Button
                 android:id="@+id/btn_clear_cache"

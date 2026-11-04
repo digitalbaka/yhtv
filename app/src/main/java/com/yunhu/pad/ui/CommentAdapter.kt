@@ -12,7 +12,9 @@ import com.yunhu.pad.R
 import com.yunhu.pad.api.Api
 
 /** 文章评论列表（含嵌套回复） */
-class CommentAdapter : RecyclerView.Adapter<CommentAdapter.VH>() {
+class CommentAdapter(
+    private val onLongClick: ((Api.Comment) -> Unit)? = null
+) : RecyclerView.Adapter<CommentAdapter.VH>() {
 
     private val items = mutableListOf<Api.Comment>()
 
@@ -51,6 +53,10 @@ class CommentAdapter : RecyclerView.Adapter<CommentAdapter.VH>() {
         }
         h.avatar.load(c.senderAvatar) { placeholder(R.drawable.bg_card); error(R.drawable.bg_card) }
         bindReplies(h.replies, c.replies)
+        h.itemView.setOnLongClickListener {
+            onLongClick?.invoke(c)
+            true
+        }
     }
 
     /** 把回复动态渲染到 ll_replies，复用 item_comment_reply 布局 */

@@ -28,7 +28,7 @@ class AddFriendActivity : AppCompatActivity() {
         binding = ActivityAddFriendBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        adapter = SearchResultAdapter { openDetail(it) }
+        adapter = SearchResultAdapter(onClick = { openDetail(it) })
         binding.rvResults.layoutManager = LinearLayoutManager(this)
         binding.rvResults.adapter = adapter
 

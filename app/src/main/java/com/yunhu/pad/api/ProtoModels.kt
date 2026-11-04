@@ -399,9 +399,23 @@ data class GroupInfo(
     var admins: List<String> = emptyList(),
     var owner: String = "",
     var myGroupNickname: String = "",
-    var groupCode: String = ""
+    var groupCode: String = "",
+    /** 我被禁言的截止时间戳，-1 表示永久 */
+    var gagUntilTimestamp: Long = 0,
+    /** 被限制（禁止发送）的消息类型，如 1,2,3 */
+    var limitedMsgType: String = "",
+    /** 是否加入群推荐 */
+    var recommandation: Boolean = true,
+    var isGag: Boolean = false,
+    var hideGroupMembers: Boolean = false,
+    /** 消息自动销毁天数：0 不删，90/365/730 */
+    var autoDeleteMessage: Long = 0,
+    var denyUpload: Boolean = false
 ) {
-    val isAdmin: Boolean get() = permissionLevel == 100 || admins.contains(createBy) // 简化：权限>=2 或在管理员列表
+    /** 群主 100 / 管理员 2 / 普通成员 0 */
+    val isAdmin: Boolean get() = permissionLevel >= 2
+    val isOwner: Boolean get() = permissionLevel == 100
+
     companion object {
         fun decode(data: ByteArray): GroupInfo {
             val g = GroupInfo()
@@ -424,9 +438,16 @@ data class GroupInfo(
                     14 -> g.doNotDisturb = r.readVarint() != 0L
                     19 -> g.top = r.readVarint() != 0L
                     20 -> admins.add(r.readString())
+                    21 -> g.gagUntilTimestamp = r.readVarint()
+                    22 -> g.limitedMsgType = r.readString()
                     23 -> g.owner = r.readString()
+                    24 -> g.recommandation = r.readVarint() != 0L
+                    25 -> g.isGag = r.readVarint() != 0L
                     28 -> g.myGroupNickname = r.readString()
                     29 -> g.groupCode = r.readString()
+                    30 -> g.hideGroupMembers = r.readVarint() != 0L
+                    32 -> g.autoDeleteMessage = r.readVarint()
+                    33 -> g.denyUpload = r.readVarint() != 0L
                     else -> r.skip(tag and 7)
                 }
             }
@@ -452,7 +473,8 @@ data class GroupMember(
             while (r.hasMore()) {
                 val tag = r.readTag()
                 when (tag ushr 3) {
-                    1 -> {} // group_id
+                    // group_id 是 string 字段：必须消费掉，否则后续字节会被当成 tag
+                    1 -> r.skip(tag and 7)
                     2 -> {
                         val sub = ProtoReader(r.readBytes())
                         while (sub.hasMore()) {

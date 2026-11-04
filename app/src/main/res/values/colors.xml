@@ -1,14 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#FF121418</color>
-    <color name="panel">#FF1C2026</color>
-    <color name="panel_focus">#FF2A3038</color>
-    <color name="accent">#FF4FC3F7</color>
-    <color name="text_primary">#FFF2F4F7</color>
-    <color name="text_secondary">#FF9AA3AD</color>
-    <color name="bubble_other">#FF242A32</color>
-    <color name="bubble_self">#FF1E4E6B</color>
-    <color name="danger">#FFEF5350</color>
+    <!-- 浅色主题 -->
+    <color name="bg">#FFF4F6FA</color>
+    <color name="panel">#FFFFFFFF</color>
+    <color name="panel_focus">#FFE2E8F0</color>
+    <color name="accent">#FF1565C0</color>
+    <color name="text_primary">#FF1A1F26</color>
+    <color name="text_secondary">#FF5E6B78</color>
+    <color name="bubble_other">#FFFFFFFF</color>
+    <color name="bubble_self">#FFD3E7F5</color>
+    <color name="danger">#FFD32F2F</color>
     <color name="white">#FFFFFFFF</color>
     <color name="black">#FF000000</color>
+    <!-- 自定义聊天背景下压的可读性蒙层（浅色主题压白） -->
+    <color name="chat_bg_scrim">#B3FFFFFF</color>
 </resources>

@@ -60,6 +60,8 @@ dependencies {
     implementation("io.coil-kt:coil:2.6.0")
     // GIF 动图解码（头像/表情）
     implementation("io.coil-kt:coil-gif:2.6.0")
+    // EXIF 方向读取（上传前纠正相机拍摄图的横竖方向）
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
     // 视频播放：ExoPlayer 流式播放，OkHttp 数据源复用带 Referer/证书放行的客户端
     implementation("androidx.media3:media3-exoplayer:1.2.1")
     implementation("androidx.media3:media3-ui:1.2.1")
