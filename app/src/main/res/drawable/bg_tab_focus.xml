@@ -20,6 +20,13 @@
             </item>
         </layer-list>
     </item>
+    <!-- 触屏按下但未选中 -->
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/panel_focus" />
+            <corners android:radius="6dp" />
+        </shape>
+    </item>
     <!-- 遥控器聚焦但未选中 -->
     <item android:state_focused="true">
         <shape android:shape="rectangle">

@@ -79,12 +79,5 @@
             android:textColor="@color/danger"
             android:textSize="16sp" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="遥控器：上下移动焦点，确认键输入/登录"
-            android:textColor="@color/text_secondary"
-            android:textSize="14sp" />
     </LinearLayout>
 </LinearLayout>

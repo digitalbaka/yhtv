@@ -4,15 +4,15 @@
     "type": "APK",
     "kind": "Directory"
   },
-  "applicationId": "com.yunhu.tv",
+  "applicationId": "com.yunhu.pad",
   "variantName": "release",
   "elements": [
     {
       "type": "SINGLE",
       "filters": [],
       "attributes": [],
-      "versionCode": 610272045,
-      "versionName": "1.1.2610272045",
+      "versionCode": 611042033,
+      "versionName": "1.1.2611042033",
       "outputFile": "app-release.apk"
     }
   ],

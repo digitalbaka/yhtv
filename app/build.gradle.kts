@@ -11,12 +11,13 @@ plugins {
 val buildStamp: String = SimpleDateFormat("yyMMddHHmm", Locale.US).format(Date())
 
 android {
-    namespace = "com.yunhu.tv"
+    namespace = "com.yunhu.pad"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.yunhu.tv"
-        minSdk = 23
+        applicationId = "com.yunhu.pad"
+        // 平板适配目标：安卓 5.0（API 21）及以上
+        minSdk = 21
         targetSdk = 34
         // versionCode 不能超过 Int 上限，去掉年份十位（yMMddHHmm，9 位数字）
         versionCode = buildStamp.substring(1).toInt()
@@ -40,6 +41,11 @@ android {
     }
     buildFeatures {
         viewBinding = true
+    }
+    lint {
+        // release 打包不做 lint 检查（避免在线下载 lint 组件导致构建失败）
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 }
 
