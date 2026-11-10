@@ -27,9 +27,10 @@ import com.yunhu.tv.api.WsClient
 import com.yunhu.tv.databinding.ActivityChatBinding
 import com.yunhu.tv.util.Session
 import com.yunhu.tv.util.YunhuRouter
+import com.yunhu.tv.voice.VoiceResultSink
 import kotlinx.coroutines.launch
 
-class ChatActivity : AppCompatActivity() {
+class ChatActivity : AppCompatActivity(), VoiceResultSink.Receiver {
 
     companion object {
         const val EXTRA_CHAT_ID = "chat_id"
@@ -90,13 +91,29 @@ class ChatActivity : AppCompatActivity() {
         setupInput()
 
         App.wsClient.addListener(wsListener)
+        VoiceResultSink.attach(this)
         loadInitial()
         lifecycleScope.launch { Api.dismissNotification(chatId) }
     }
 
     override fun onDestroy() {
+        VoiceResultSink.detach(this)
         App.wsClient.removeListener(wsListener)
         super.onDestroy()
+    }
+
+    /** 语音文本落到输入框，等用户自己按发送（第一步明确不自动发送） */
+    override fun onVoiceText(text: String) {
+        binding.etInput.setText(text)
+        binding.etInput.setSelection(text.length)
+        binding.etInput.requestFocus()
+        toast("语音文本已填入输入框（未发送）")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 调试面板提交时聊天页可能还没打开，进来后把暂存的那条补上
+        VoiceResultSink.takePending()?.let { onVoiceText(it) }
     }
 
     // ---------- 消息列表 ----------
@@ -245,6 +262,15 @@ class ChatActivity : AppCompatActivity() {
         val text = binding.etInput.text.toString().trim()
         if (text.isEmpty()) return
         binding.etInput.setText("")
+        submitText(text)
+    }
+
+    /**
+     * 把一条文本走现有发送链路（引用、本地回显都复用）。
+     * 语音输入等外部来源将来也走这里，便于保持行为一致。
+     */
+    private fun submitText(text: String) {
+        if (text.isBlank()) return
         // 引用：带上被引用消息的 msgId，本地回显时附引用摘要
         val quote = quoteTarget
         val quoteId = quote?.msgId ?: ""

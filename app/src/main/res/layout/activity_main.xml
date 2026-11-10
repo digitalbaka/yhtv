@@ -392,6 +392,17 @@
             </LinearLayout>
 
             <Button
+                android:id="@+id/btn_voice_debug"
+                android:layout_width="240dp"
+                android:layout_height="52dp"
+                android:layout_marginTop="16dp"
+                android:background="@drawable/bg_button_focus"
+                android:text="语音输入调试"
+                android:textColor="@color/white"
+                android:textSize="18sp"
+                android:visibility="gone" />
+
+            <Button
                 android:id="@+id/btn_clear_cache"
                 android:layout_width="240dp"
                 android:layout_height="52dp"

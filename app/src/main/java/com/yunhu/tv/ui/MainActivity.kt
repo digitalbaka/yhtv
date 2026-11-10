@@ -1,6 +1,7 @@
 package com.yunhu.tv.ui
 
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
@@ -126,6 +127,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnEditNickname.setOnClickListener { showEditNicknameDialog() }
         binding.btnEditIntro.setOnClickListener { showEditIntroDialog() }
         binding.btnClearCache.setOnClickListener { confirmClearCache() }
+        setupVoiceDebugEntry()
         refreshCacheSize()
 
         // 处理 yunhu:// 深链（外部唤起或应用内跳转）
@@ -142,6 +144,19 @@ class MainActivity : AppCompatActivity() {
         val uri = intent.data ?: return
         if (uri.scheme == "yunhu") {
             com.yunhu.tv.util.YunhuRouter.open(this, uri.toString())
+        }
+    }
+
+    /**
+     * 语音调试面板入口：仅 debuggable 包可见。
+     * 本工程不生成 BuildConfig，所以用 ApplicationInfo.FLAG_DEBUGGABLE 判断。
+     */
+    private fun setupVoiceDebugEntry() {
+        val debuggable = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        binding.btnVoiceDebug.visibility = if (debuggable) View.VISIBLE else View.GONE
+        if (!debuggable) return
+        binding.btnVoiceDebug.setOnClickListener {
+            startActivity(Intent(this, VoiceDebugPanelActivity::class.java))
         }
     }
 
