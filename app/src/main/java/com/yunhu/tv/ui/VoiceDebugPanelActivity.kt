@@ -101,21 +101,31 @@ class VoiceDebugPanelActivity : AppCompatActivity() {
     }
 
     private fun runOnce() {
+        val typed = binding.etText.text.toString()
         val input = DebugVoiceInput(
             context = this,
-            typedText = binding.etText.text.toString(),
+            typedText = typed,
             wavUri = wavUri,
             wavName = wavName
         )
+        // 只选了 wav、没敲字时，产出的是文件描述文字，只留在面板里
+        val origin = if (wavUri != null && typed.isBlank()) {
+            VoiceResultSink.Origin.FILE
+        } else {
+            VoiceResultSink.Origin.TYPED
+        }
         lifecycleScope.launch {
             binding.tvStatus.text = "执行中…"
             input.stop()
                 .onSuccess { text ->
-                    val delivered = VoiceResultSink.dispatch(text)
-                    binding.tvStatus.text = if (delivered) {
-                        "得到文本：$text\n已填入聊天输入框（未发送）"
-                    } else {
-                        "得到文本：$text\n聊天页未打开，已暂存，进入聊天后自动填入"
+                    val delivered = VoiceResultSink.dispatch(text, origin)
+                    binding.tvStatus.text = when {
+                        origin == VoiceResultSink.Origin.FILE ->
+                            "结果（仅面板展示，未填入输入框）：$text"
+                        delivered ->
+                            "得到文本：$text\n已填入聊天输入框（未发送）"
+                        else ->
+                            "得到文本：$text\n聊天页未打开，已暂存，进入聊天后自动填入"
                     }
                 }
                 .onFailure { e ->
