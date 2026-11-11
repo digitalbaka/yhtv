@@ -95,9 +95,17 @@
                 android:layout_height="52dp"
                 android:layout_marginTop="28dp"
                 android:background="@drawable/bg_button_focus"
-                android:text="执行并送入聊天输入框"
+                android:text="执行"
                 android:textColor="@color/white"
                 android:textSize="17sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="wav 来源的结果只在面板展示，不写入聊天输入框"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp" />
 
             <TextView
                 android:id="@+id/tv_status"

@@ -7,14 +7,22 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.yunhu.tv.databinding.ActivityVoiceDebugBinding
-import com.yunhu.tv.voice.DebugVoiceInput
+import com.yunhu.tv.voice.AudioSource
+import com.yunhu.tv.voice.HttpAsrRecognizer
+import com.yunhu.tv.voice.PlaceholderRecognizer
+import com.yunhu.tv.voice.VoiceOutcome
+import com.yunhu.tv.voice.VoicePipeline
+import com.yunhu.tv.voice.VoicePrefs
 import com.yunhu.tv.voice.VoiceResultSink
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -40,7 +48,15 @@ class VoiceDebugPanelActivity : AppCompatActivity() {
         binding = ActivityVoiceDebugBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.tvImpl.text = "当前实现：${DebugVoiceInput.ID}"
+        // 打开面板默认聚焦「执行」，不自动弹软键盘
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
+        binding.root.isFocusableInTouchMode = true
+        binding.etText.clearFocus()
+        binding.btnDispatch.requestFocus()
+
+        val active = if (VoicePrefs.isAsrReady(VoicePrefs.asr)) HttpAsrRecognizer.ID else PlaceholderRecognizer.ID
+        binding.tvImpl.text =
+            "当前实现：$active（${PlaceholderRecognizer.ID} / ${HttpAsrRecognizer.ID}，同一接口可互换）"
         FocusEffects.apply(binding.btnPickWav)
         FocusEffects.apply(binding.btnDispatch)
 
@@ -101,36 +117,39 @@ class VoiceDebugPanelActivity : AppCompatActivity() {
     }
 
     private fun runOnce() {
-        val typed = binding.etText.text.toString()
-        val input = DebugVoiceInput(
-            context = this,
-            typedText = typed,
-            wavUri = wavUri,
-            wavName = wavName
-        )
-        // 只选了 wav、没敲字时，产出的是文件描述文字，只留在面板里
-        val origin = if (wavUri != null && typed.isBlank()) {
-            VoiceResultSink.Origin.FILE
-        } else {
-            VoiceResultSink.Origin.TYPED
+        val typed = binding.etText.text.toString().trim()
+        if (typed.isNotEmpty()) {
+            val outcome = VoiceOutcome(text = typed, placeholder = false, engine = "手动输入")
+            val delivered = VoiceResultSink.dispatch(outcome, VoiceResultSink.Origin.TYPED)
+            binding.tvStatus.text = if (delivered) {
+                "得到文本：$typed\n已填入聊天输入框（未发送）"
+            } else {
+                "得到文本：$typed\n聊天页未打开，已暂存，进入聊天后自动填入"
+            }
+            return
         }
+
+        val uri = wavUri
+        if (uri == null) {
+            binding.tvStatus.text = "请输入文本，或选择一个 wav 文件"
+            return
+        }
+        val name = wavName ?: "本地文件"
         lifecycleScope.launch {
-            binding.tvStatus.text = "执行中…"
-            input.stop()
-                .onSuccess { text ->
-                    val delivered = VoiceResultSink.dispatch(text, origin)
-                    binding.tvStatus.text = when {
-                        origin == VoiceResultSink.Origin.FILE ->
-                            "结果（仅面板展示，未填入输入框）：$text"
-                        delivered ->
-                            "得到文本：$text\n已填入聊天输入框（未发送）"
-                        else ->
-                            "得到文本：$text\n聊天页未打开，已暂存，进入聊天后自动填入"
-                    }
+            binding.tvStatus.text = "识别中…"
+            runCatching {
+                val clip = withContext(Dispatchers.IO) {
+                    AudioSource.readFromUri(this@VoiceDebugPanelActivity, uri, name)
                 }
-                .onFailure { e ->
-                    binding.tvStatus.text = "失败：${e.message}"
-                }
+                VoicePipeline.transcribe(clip)
+            }.onSuccess { outcome ->
+                // wav 来源只在面板展示，不写进聊天输入框（避免把调试描述当消息发出去）
+                VoiceResultSink.dispatch(outcome, VoiceResultSink.Origin.FILE)
+                binding.tvStatus.text = "结果（仅面板展示）：${outcome.text}\n引擎：${outcome.engine}" +
+                    if (outcome.note.isNotEmpty()) "\n说明：${outcome.note}" else ""
+            }.onFailure { e ->
+                binding.tvStatus.text = "失败：${e.message}"
+            }
         }
     }
 }

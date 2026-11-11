@@ -61,4 +61,6 @@ dependencies {
     // 老电视系统字体缺 Emoji 字形，内置 Emoji 字体兼容包
     implementation("androidx.emoji2:emoji2-bundled:1.4.0")
     implementation("androidx.emoji2:emoji2-views-helper:1.4.0")
+    // 二维码生成（扫码填写语音配置 / 手机录音入口），无传递依赖
+    implementation("com.google.zxing:core:3.5.3")
 }

@@ -82,6 +82,19 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.VoiceSettingsActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ui.VoiceQrActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.MicLinkActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.GroupSettingsActivity"
             android:exported="false" />
 

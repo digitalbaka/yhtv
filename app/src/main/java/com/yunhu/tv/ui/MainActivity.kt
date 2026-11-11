@@ -128,6 +128,12 @@ class MainActivity : AppCompatActivity() {
         binding.btnEditIntro.setOnClickListener { showEditIntroDialog() }
         binding.btnClearCache.setOnClickListener { confirmClearCache() }
         setupVoiceDebugEntry()
+        binding.btnVoiceSettings.setOnClickListener {
+            startActivity(Intent(this, VoiceSettingsActivity::class.java))
+        }
+        binding.btnMicLink.setOnClickListener {
+            startActivity(Intent(this, MicLinkActivity::class.java))
+        }
         refreshCacheSize()
 
         // 处理 yunhu:// 深链（外部唤起或应用内跳转）

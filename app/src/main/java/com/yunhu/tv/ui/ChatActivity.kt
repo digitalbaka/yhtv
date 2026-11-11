@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -27,6 +28,8 @@ import com.yunhu.tv.api.WsClient
 import com.yunhu.tv.databinding.ActivityChatBinding
 import com.yunhu.tv.util.Session
 import com.yunhu.tv.util.YunhuRouter
+import com.yunhu.tv.voice.VoiceOutcome
+import com.yunhu.tv.voice.VoicePrefs
 import com.yunhu.tv.voice.VoiceResultSink
 import kotlinx.coroutines.launch
 
@@ -50,6 +53,9 @@ class ChatActivity : AppCompatActivity(), VoiceResultSink.Receiver {
     private var loadingOlder = false
     private var hasMore = true
     private var stickersLoaded = false
+
+    /** 输入框原始 hint，语音提示会临时改写它，恢复时要还原 */
+    private var defaultHint: CharSequence = ""
 
     private val wsListener = object : WsClient.Listener {
         override fun onPush(msg: ChatMsg) {
@@ -102,18 +108,49 @@ class ChatActivity : AppCompatActivity(), VoiceResultSink.Receiver {
         super.onDestroy()
     }
 
-    /** 语音文本落到输入框，等用户自己按发送（第一步明确不自动发送） */
-    override fun onVoiceText(text: String) {
+    /** 语音文本落到输入框，等用户自己按发送（不自动发送） */
+    override fun onVoiceText(outcome: VoiceOutcome) {
+        val text = outcome.text
+        if (text.isBlank()) {
+            // 已配置密钥但识别失败：不覆盖输入框里已有的内容，只把原因挂在输入框上方
+            val reason = outcome.note.ifEmpty { "识别失败，请重试" }
+            binding.etInput.hint = reason
+            showVoiceHint(reason)
+            toast(reason)
+            return
+        }
+        binding.etInput.hint = defaultHint
         binding.etInput.setText(text)
         binding.etInput.setSelection(text.length)
         binding.etInput.requestFocus()
-        toast("语音文本已填入输入框（未发送）")
+        if (outcome.placeholder) {
+            // 输入框上方常驻一句「这是占位文本」，避免被当成识别结果直接发出去
+            binding.etInput.hint = "未配置识别密钥，当前为占位文本"
+            showVoiceHint("未配置识别密钥，当前为占位文本")
+            toast("这是占位文本，不是识别结果：$text")
+        } else {
+            showVoiceHint(null)
+            toast("语音文本已填入输入框（未发送）")
+        }
+    }
+
+    /** visible=true 时在输入框上方常驻提示；传 null 隐藏 */
+    private fun showVoiceHint(text: String?) {
+        if (text.isNullOrEmpty()) {
+            binding.tvVoiceHint.visibility = View.GONE
+        } else {
+            binding.tvVoiceHint.text = text
+            binding.tvVoiceHint.visibility = View.VISIBLE
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        // 调试面板提交时聊天页可能还没打开，进来后把暂存的那条补上
-        VoiceResultSink.takePending()?.let { onVoiceText(it) }
+        // 调试面板 / 手机录音提交时聊天页可能还没打开，进来后把暂存的结果补上
+        while (true) {
+            val outcome = VoiceResultSink.takePending() ?: break
+            onVoiceText(outcome)
+        }
     }
 
     // ---------- 消息列表 ----------
@@ -170,6 +207,7 @@ class ChatActivity : AppCompatActivity(), VoiceResultSink.Receiver {
     // ---------- 输入与发送 ----------
 
     private fun setupInput() {
+        defaultHint = binding.etInput.hint ?: ""
         binding.btnQuoteCancel.setOnClickListener { clearQuote() }
         binding.btnSettings.setOnClickListener {
             if (chatType == ChatType.GROUP) {

@@ -315,13 +315,20 @@
             </FrameLayout>
         </LinearLayout>
 
-        <LinearLayout
+        <ScrollView
             android:id="@+id/panel_me"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:gravity="center"
             android:orientation="vertical"
-            android:visibility="gone">
+            android:paddingTop="24dp"
+            android:paddingBottom="24dp">
 
             <ImageView
                 android:id="@+id/iv_my_avatar"
@@ -403,6 +410,26 @@
                 android:visibility="gone" />
 
             <Button
+                android:id="@+id/btn_voice_settings"
+                android:layout_width="240dp"
+                android:layout_height="52dp"
+                android:layout_marginTop="16dp"
+                android:background="@drawable/bg_button_focus"
+                android:text="语音识别设置"
+                android:textColor="@color/white"
+                android:textSize="18sp" />
+
+            <Button
+                android:id="@+id/btn_mic_link"
+                android:layout_width="240dp"
+                android:layout_height="52dp"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_button_focus"
+                android:text="手机扫码录音"
+                android:textColor="@color/white"
+                android:textSize="18sp" />
+
+            <Button
                 android:id="@+id/btn_clear_cache"
                 android:layout_width="240dp"
                 android:layout_height="52dp"
@@ -422,5 +449,6 @@
                 android:textColor="@color/white"
                 android:textSize="18sp" />
         </LinearLayout>
+        </ScrollView>
     </FrameLayout>
 </LinearLayout>
