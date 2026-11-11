@@ -21,3 +21,7 @@ Thumbs.db
 
 # 临时截图
 screen.png
+
+# 发版构建产物（不入库，本地保留）
+app/release/app-release.apk
+app/release/output-metadata.json
