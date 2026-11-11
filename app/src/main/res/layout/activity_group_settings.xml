@@ -150,7 +150,7 @@
                 android:layout_marginTop="10dp"
                 android:background="@drawable/bg_button_focus"
                 android:text="复制简介"
-                android:textColor="@color/white"
+                android:textColor="@color/text_primary"
                 android:textSize="14sp" />
 
             <!-- 功能区 -->
@@ -401,7 +401,7 @@
                 android:layout_marginTop="32dp"
                 android:background="@drawable/bg_button_focus"
                 android:text="退出群聊"
-                android:textColor="@color/white"
+                android:textColor="@color/text_primary"
                 android:textSize="17sp" />
 
             <TextView

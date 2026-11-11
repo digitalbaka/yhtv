@@ -136,7 +136,10 @@ class ChatActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        // 录音中途退出页面：停掉录音器后把没发出去的临时文件一起删掉
+        val pendingVoice = recordFile
         stopRecorder()
+        pendingVoice?.delete()
         App.wsClient.removeListener(wsListener)
         super.onDestroy()
     }
@@ -441,8 +444,12 @@ class ChatActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 block()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 页面退出导致的取消不算发送失败，别在已销毁的页面弹 Toast
+                throw e
             } catch (e: Exception) {
-                toast("发送失败: ${e.message}")
+                // 上传被取消（离开页面）时 OkHttp 抛的是 IOException，这里同样不该弹失败提示
+                if (!isFinishing && !isDestroyed) toast("发送失败: ${e.message}")
             } finally {
                 uploading = false
             }
@@ -459,7 +466,14 @@ class ChatActivity : AppCompatActivity() {
                 val img = withContext(Dispatchers.IO) { MediaPrep.compressImage(src, dir) }
                 try {
                     val key = Qiniu.upload(img.file, Api.qiniuToken(""))
-                    val content = MsgContent(imageUrl = key, width = img.width, height = img.height)
+                    // 官方客户端把图片 key 填在 image（字段 9）；文档的图片消息还要求 image_url（字段 3），
+                    // 两个字段同值都填，收发两端都能显示
+                    val content = MsgContent(
+                        image = key,
+                        imageUrl = key,
+                        width = img.width,
+                        height = img.height
+                    )
                     val msgId = Api.sendMessage(chatId, chatType, ContentType.IMAGE, content)
                     appendLocal(msgId, ContentType.IMAGE, content)
                 } finally {
@@ -481,7 +495,7 @@ class ChatActivity : AppCompatActivity() {
                 // 服务端普通用户视频上限 40MB，超限直接拦下，避免传完才失败
                 if (src.length() > 40L * 1024 * 1024) throw IOException("视频超过 40MB，无法发送")
                 val meta = withContext(Dispatchers.IO) { MediaPrep.videoMeta(src) }
-                val key = Qiniu.upload(src, Api.qiniuToken("-video"))
+                val key = Qiniu.upload(src, Api.qiniuToken("-video"), video = true)
                 val content = MsgContent(
                     videoUrl = key,
                     videoTime = meta.durationSec,

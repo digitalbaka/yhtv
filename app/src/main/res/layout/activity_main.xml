@@ -121,7 +121,7 @@
                 android:layout_marginTop="16dp"
                 android:background="@drawable/bg_button_focus"
                 android:text="搜索用户 / 群组 / 聊天记录 / 文章"
-                android:textColor="@color/white"
+                android:textColor="@color/text_primary"
                 android:textSize="16sp" />
 
             <FrameLayout
@@ -172,7 +172,7 @@
                     android:layout_height="48dp"
                     android:background="@drawable/bg_button_focus"
                     android:text="添加"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                 <Button
@@ -182,7 +182,7 @@
                     android:layout_marginStart="12dp"
                     android:background="@drawable/bg_button_focus"
                     android:text="申请 / 邀请"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
             </LinearLayout>
 
@@ -268,7 +268,7 @@
                     android:layout_weight="1"
                     android:background="@drawable/bg_button_focus"
                     android:text="我的文章"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="15sp" />
 
                 <Button
@@ -279,7 +279,7 @@
                     android:layout_weight="1"
                     android:background="@drawable/bg_button_focus"
                     android:text="我的收藏"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="15sp" />
 
                 <Button
@@ -290,7 +290,7 @@
                     android:layout_weight="1"
                     android:background="@drawable/bg_button_focus"
                     android:text="打赏记录"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="15sp" />
 
                 <Button
@@ -301,7 +301,7 @@
                     android:layout_weight="1"
                     android:background="@drawable/bg_button_focus"
                     android:text="屏蔽用户"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="15sp" />
 
                 <Button
@@ -312,7 +312,7 @@
                     android:layout_weight="1"
                     android:background="@drawable/bg_button_focus"
                     android:text="草稿箱"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="15sp" />
             </LinearLayout>
 
@@ -401,7 +401,7 @@
                     android:layout_height="52dp"
                     android:background="@drawable/bg_button_focus"
                     android:text="修改昵称"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                 <Button
@@ -411,7 +411,7 @@
                     android:layout_marginStart="14dp"
                     android:background="@drawable/bg_button_focus"
                     android:text="修改简介"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
             </LinearLayout>
 
@@ -422,7 +422,7 @@
                 android:layout_marginTop="16dp"
                 android:background="@drawable/bg_button_focus"
                 android:text="设置"
-                android:textColor="@color/white"
+                android:textColor="@color/text_primary"
                 android:textSize="18sp" />
 
             <Button
@@ -432,7 +432,7 @@
                 android:layout_marginTop="16dp"
                 android:background="@drawable/bg_button_focus"
                 android:text="清除缓存"
-                android:textColor="@color/white"
+                android:textColor="@color/text_primary"
                 android:textSize="18sp" />
 
             <Button
@@ -442,7 +442,7 @@
                 android:layout_marginTop="12dp"
                 android:background="@drawable/bg_button_focus"
                 android:text="退出登录"
-                android:textColor="@color/white"
+                android:textColor="@color/text_primary"
                 android:textSize="18sp" />
         </LinearLayout>
     </FrameLayout>

@@ -33,7 +33,8 @@ class MessageAdapter(
 
         /** 消息中可全屏查看的图片地址，非图片类返回空串 */
         fun imageUrlOf(m: ChatMsg): String = when (m.contentType) {
-            ContentType.IMAGE -> Api.fullImageUrl(m.content.imageUrl)
+            // 官方客户端发图时 key 放在 image（字段 9），服务端下发时也可能在 image_url（字段 3），两者都认
+            ContentType.IMAGE -> Api.fullImageUrl(m.content.imageUrl.ifEmpty { m.content.image })
             ContentType.STICKER -> Api.fullImageUrl(m.content.image)
             else -> ""
         }
@@ -220,7 +221,7 @@ class MessageAdapter(
             }
             ContentType.IMAGE -> {
                 if (m.content.text.isNotEmpty()) showText(h, m.content.text)
-                showImage(h, Api.fullImageUrl(m.content.imageUrl))
+                showImage(h, Api.fullImageUrl(m.content.imageUrl.ifEmpty { m.content.image }))
             }
             ContentType.STICKER -> showImage(h, Api.fullImageUrl(m.content.image))
             ContentType.FILE -> if (m.content.videoUrl.isNotEmpty() && !isAudioFile(m.content.fileName))

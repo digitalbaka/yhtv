@@ -7,6 +7,9 @@
     <color name="accent">#FF1565C0</color>
     <color name="text_primary">#FF1A1F26</color>
     <color name="text_secondary">#FF5E6B78</color>
+    <color name="text_hint">#FF6F7B88</color>
+    <!-- 按钮按下时的浅色强调底：避免用饱和 accent 填充后深色文字看不清 -->
+    <color name="accent_soft">#1A1565C0</color>
     <color name="bubble_other">#FFFFFFFF</color>
     <color name="bubble_self">#FFD3E7F5</color>
     <color name="danger">#FFD32F2F</color>

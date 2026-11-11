@@ -42,7 +42,7 @@
             android:paddingEnd="20dp"
             android:singleLine="true"
             android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_secondary"
+            android:textColorHint="@color/text_hint"
             android:textSize="20sp" />
 
         <EditText
@@ -58,7 +58,7 @@
             android:paddingEnd="20dp"
             android:singleLine="true"
             android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_secondary"
+            android:textColorHint="@color/text_hint"
             android:textSize="20sp" />
 
         <Button
@@ -68,7 +68,7 @@
             android:layout_marginTop="28dp"
             android:background="@drawable/bg_button_focus"
             android:text="登  录"
-            android:textColor="@color/white"
+            android:textColor="@color/text_primary"
             android:textSize="20sp" />
 
         <TextView

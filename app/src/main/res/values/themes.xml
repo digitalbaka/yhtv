@@ -8,7 +8,7 @@
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
         <item name="android:editTextColor">@color/text_primary</item>
-        <item name="android:textColorHint">@color/text_secondary</item>
+        <item name="android:textColorHint">@color/text_hint</item>
     </style>
 
     <style name="Theme.YunHuPad.Fullscreen" parent="Theme.AppCompat.DayNight.NoActionBar">
@@ -21,7 +21,7 @@
         <item name="android:layout_height">48dp</item>
         <item name="android:minWidth">96dp</item>
         <item name="android:background">@drawable/bg_button_focus</item>
-        <item name="android:textColor">@color/white</item>
+        <item name="android:textColor">@color/text_primary</item>
         <item name="android:textSize">16sp</item>
     </style>
 

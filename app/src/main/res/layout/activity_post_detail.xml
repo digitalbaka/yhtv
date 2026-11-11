@@ -30,7 +30,7 @@
             android:layout_height="44dp"
             android:background="@drawable/bg_button_focus"
             android:text="操作"
-            android:textColor="@color/white"
+            android:textColor="@color/text_primary"
             android:textSize="15sp" />
     </LinearLayout>
 
@@ -115,7 +115,7 @@
                     android:layout_height="48dp"
                     android:background="@drawable/bg_button_focus"
                     android:text="点赞"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                 <Button
@@ -125,7 +125,7 @@
                     android:layout_marginStart="12dp"
                     android:background="@drawable/bg_button_focus"
                     android:text="收藏"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
 
                 <Button
@@ -135,7 +135,7 @@
                     android:layout_marginStart="12dp"
                     android:background="@drawable/bg_button_focus"
                     android:text="投币"
-                    android:textColor="@color/white"
+                    android:textColor="@color/text_primary"
                     android:textSize="16sp" />
             </LinearLayout>
 
@@ -182,7 +182,7 @@
             android:paddingEnd="16dp"
             android:singleLine="true"
             android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_secondary"
+            android:textColorHint="@color/text_hint"
             android:textSize="16sp" />
 
         <Button
@@ -192,7 +192,7 @@
             android:layout_marginStart="10dp"
             android:background="@drawable/bg_button_focus"
             android:text="评论"
-            android:textColor="@color/white"
+            android:textColor="@color/text_primary"
             android:textSize="16sp" />
     </LinearLayout>
 </LinearLayout>

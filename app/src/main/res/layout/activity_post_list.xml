@@ -36,7 +36,7 @@
             android:layout_marginStart="14dp"
             android:background="@drawable/bg_button_focus"
             android:text="发布"
-            android:textColor="@color/white"
+            android:textColor="@color/text_primary"
             android:textSize="15sp"
             android:visibility="gone" />
     </LinearLayout>
