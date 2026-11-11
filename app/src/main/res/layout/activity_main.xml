@@ -225,45 +225,29 @@
                 android:paddingTop="16dp"
                 android:paddingEnd="16dp">
 
+                <!-- 尺寸由 CommunityEntryButton 样式给出：横屏 160dp 定宽（保持原样），竖屏四等分 -->
                 <Button
                     android:id="@+id/btn_ba_followed"
-                    android:layout_width="160dp"
-                    android:layout_height="48dp"
-                    android:background="@drawable/bg_button_focus"
-                    android:text="已关注版块"
-                    android:textColor="@color/white"
-                    android:textSize="16sp" />
+                    style="@style/CommunityEntryButton"
+                    android:text="已关注版块" />
 
                 <Button
                     android:id="@+id/btn_ba_all"
-                    android:layout_width="160dp"
-                    android:layout_height="48dp"
+                    style="@style/CommunityEntryButton"
                     android:layout_marginStart="12dp"
-                    android:background="@drawable/bg_button_focus"
-                    android:text="全部版块"
-                    android:textColor="@color/white"
-                    android:textSize="16sp" />
+                    android:text="全部版块" />
 
                 <Button
                     android:id="@+id/btn_ba_mine"
-                    android:layout_width="160dp"
-                    android:layout_height="48dp"
+                    style="@style/CommunityEntryButton"
                     android:layout_marginStart="12dp"
-                    android:background="@drawable/bg_button_focus"
-                    android:text="我的"
-                    android:textColor="@color/white"
-                    android:textSize="16sp" />
+                    android:text="我的" />
 
                 <Button
                     android:id="@+id/btn_community_search"
-                    android:layout_width="0dp"
-                    android:layout_height="48dp"
+                    style="@style/CommunityEntrySearchButton"
                     android:layout_marginStart="12dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_button_focus"
-                    android:text="搜索文章"
-                    android:textColor="@color/white"
-                    android:textSize="16sp" />
+                    android:text="搜索文章" />
             </LinearLayout>
 
             <!-- 「我的」模式下的功能入口 -->

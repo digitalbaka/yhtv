@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 竖屏：内容区可用宽度仅 555dp，四个入口等宽平分，不再用 160dp 定宽挤压搜索入口 -->
+    <style name="CommunityEntryButton" parent="CommunityEntryButtonBase">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_weight">1</item>
+    </style>
+</resources>
