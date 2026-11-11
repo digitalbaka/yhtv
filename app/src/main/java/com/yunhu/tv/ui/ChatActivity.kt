@@ -26,6 +26,7 @@ import com.yunhu.tv.api.Sender
 import com.yunhu.tv.api.StreamMsg
 import com.yunhu.tv.api.WsClient
 import com.yunhu.tv.databinding.ActivityChatBinding
+import com.yunhu.tv.tts.TtsSpeaker
 import com.yunhu.tv.util.Session
 import com.yunhu.tv.util.YunhuRouter
 import com.yunhu.tv.voice.VoiceOutcome
@@ -67,6 +68,7 @@ class ChatActivity : AppCompatActivity(), VoiceResultSink.Receiver {
             if (messageAdapter.append(msg)) {
                 scrollToBottom()
                 lifecycleScope.launch { Api.dismissNotification(chatId) }
+                maybeSpeak(msg)
             }
         }
 
@@ -105,6 +107,8 @@ class ChatActivity : AppCompatActivity(), VoiceResultSink.Receiver {
     override fun onDestroy() {
         VoiceResultSink.detach(this)
         App.wsClient.removeListener(wsListener)
+        // 离开聊天页停止朗读，不影响其它页面
+        TtsSpeaker.stop()
         super.onDestroy()
     }
 
@@ -142,6 +146,41 @@ class ChatActivity : AppCompatActivity(), VoiceResultSink.Receiver {
             binding.tvVoiceHint.text = text
             binding.tvVoiceHint.visibility = View.VISIBLE
         }
+    }
+
+    /**
+     * 朗读新消息：只往队列尾部追加，不抢焦点、不打断正在朗读的内容。
+     * 范围由设置决定（全部 / 仅新消息 / 指定用户 / 机器人消息）。
+     */
+    private fun maybeSpeak(msg: ChatMsg) {
+        val settings = VoicePrefs.ttsSettings
+        if (!settings.enabled) return
+        if (msg.contentType == ContentType.TIP) return
+        val isMine = msg.direction == "right" ||
+            (msg.sender.chatId.isNotEmpty() && msg.sender.chatId == Session.userId)
+        if (!TtsSpeaker.shouldSpeak(
+                settings,
+                msg.sender.name,
+                msg.sender.chatId,
+                msg.sender.chatType,
+                isMine
+            )
+        ) return
+        val text = speechTextOf(msg)
+        if (text.isNotBlank()) TtsSpeaker.speak(text)
+    }
+
+    private fun speechTextOf(msg: ChatMsg): String = when (msg.contentType) {
+        ContentType.TEXT -> msg.content.text
+        ContentType.MARKDOWN, ContentType.HTML ->
+            msg.content.text.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim()
+        ContentType.IMAGE -> "[图片]"
+        ContentType.STICKER -> "[表情]"
+        ContentType.VIDEO -> "[视频]"
+        ContentType.FILE -> "[文件] ${msg.content.text}"
+        ContentType.AUDIO -> "[语音] ${msg.content.audioTime} 秒"
+        ContentType.CALL -> "[通话] ${msg.content.callStatusText}"
+        else -> msg.content.text
     }
 
     override fun onResume() {

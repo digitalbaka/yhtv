@@ -91,6 +91,11 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.TtsSettingsActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".ui.MicLinkActivity"
             android:exported="false" />
 

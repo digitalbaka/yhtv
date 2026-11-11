@@ -131,6 +131,9 @@ class MainActivity : AppCompatActivity() {
         binding.btnVoiceSettings.setOnClickListener {
             startActivity(Intent(this, VoiceSettingsActivity::class.java))
         }
+        binding.btnTtsSettings.setOnClickListener {
+            startActivity(Intent(this, TtsSettingsActivity::class.java))
+        }
         binding.btnMicLink.setOnClickListener {
             startActivity(Intent(this, MicLinkActivity::class.java))
         }

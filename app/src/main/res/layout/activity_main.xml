@@ -430,6 +430,16 @@
                 android:textSize="18sp" />
 
             <Button
+                android:id="@+id/btn_tts_settings"
+                android:layout_width="240dp"
+                android:layout_height="52dp"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_button_focus"
+                android:text="朗读设置"
+                android:textColor="@color/white"
+                android:textSize="18sp" />
+
+            <Button
                 android:id="@+id/btn_clear_cache"
                 android:layout_width="240dp"
                 android:layout_height="52dp"
