@@ -610,12 +610,14 @@ object Api {
         val avatarUrl: String
     )
 
-    /** 屏蔽用户列表 */
-    suspend fun blackList(size: Int = 50, page: Int = 1): List<BlockedUser> = withContext(Dispatchers.IO) {
+    /** 屏蔽用户列表（分页，同时返回服务端 total） */
+    suspend fun blackListPage(size: Int = 50, page: Int = 1): Pair<List<BlockedUser>, Int> = withContext(Dispatchers.IO) {
         val resp = postJson("$BASE/v1/community/black-list", JSONObject().put("size", size).put("page", page))
         if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取屏蔽列表失败"))
-        val arr = resp.optJSONObject("data")?.optJSONArray("list") ?: return@withContext emptyList()
-        (0 until arr.length()).mapNotNull { i ->
+        val data = resp.optJSONObject("data")
+        val total = data?.optInt("total", -1) ?: -1
+        val arr = data?.optJSONArray("list") ?: return@withContext emptyList<BlockedUser>() to total
+        val users = (0 until arr.length()).mapNotNull { i ->
             arr.optJSONObject(i)?.let { o ->
                 BlockedUser(
                     id = o.optLong("id"),
@@ -625,7 +627,11 @@ object Api {
                 )
             }
         }
+        users to total
     }
+
+    /** 屏蔽用户列表 */
+    suspend fun blackList(size: Int = 50, page: Int = 1): List<BlockedUser> = blackListPage(size, page).first
 
     /** 屏蔽/取消屏蔽用户。isAdd: 1-屏蔽 0-取消 */
     suspend fun setBlackList(authorId: String, isAdd: Int) = withContext(Dispatchers.IO) {

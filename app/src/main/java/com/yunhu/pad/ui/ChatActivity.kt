@@ -252,7 +252,10 @@ class ChatActivity : AppCompatActivity() {
                 startActivity(Intent(this, GroupSettingsActivity::class.java)
                     .putExtra(GroupSettingsActivity.EXTRA_GROUP_ID, chatId))
             } else {
-                openUserProfile(chatId, chatType, chatName, "")
+                startActivity(Intent(this, FriendSettingsActivity::class.java)
+                    .putExtra(FriendSettingsActivity.EXTRA_CHAT_ID, chatId)
+                    .putExtra(FriendSettingsActivity.EXTRA_CHAT_TYPE, chatType)
+                    .putExtra(FriendSettingsActivity.EXTRA_NAME, chatName))
             }
         }
         binding.btnSend.setOnClickListener { sendText() }
