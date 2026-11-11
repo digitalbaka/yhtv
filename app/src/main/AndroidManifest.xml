@@ -108,6 +108,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.SettingsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.GroupMembersActivity"
             android:exported="false" />
 
