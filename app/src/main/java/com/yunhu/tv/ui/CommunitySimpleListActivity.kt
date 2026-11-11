@@ -102,7 +102,7 @@ class CommunitySimpleListActivity : AppCompatActivity() {
                         )
                     }
                 } else {
-                    Api.blackList().forEach { u ->
+                    Api.blackList().list.forEach { u ->
                         rows.add(Row(title = u.nickname.ifEmpty { u.userId }, desc = "ID: ${u.userId}", avatar = u.avatarUrl, userId = u.userId))
                     }
                 }

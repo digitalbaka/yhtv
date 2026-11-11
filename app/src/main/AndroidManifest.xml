@@ -104,6 +104,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.FriendSettingsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.GroupMembersActivity"
             android:exported="false" />
 

@@ -253,7 +253,13 @@ class ChatActivity : AppCompatActivity(), VoiceResultSink.Receiver {
                 startActivity(Intent(this, GroupSettingsActivity::class.java)
                     .putExtra(GroupSettingsActivity.EXTRA_GROUP_ID, chatId))
             } else {
-                openUserProfile(chatId, chatType, chatName, "")
+                // 好友/机器人会话：进会话设置页（资料卡 + 免打扰 + 社区黑名单）
+                startActivity(
+                    Intent(this, FriendSettingsActivity::class.java)
+                        .putExtra(FriendSettingsActivity.EXTRA_CHAT_ID, chatId)
+                        .putExtra(FriendSettingsActivity.EXTRA_CHAT_TYPE, chatType)
+                        .putExtra(FriendSettingsActivity.EXTRA_CHAT_NAME, chatName)
+                )
             }
         }
         binding.btnSend.setOnClickListener { sendText() }

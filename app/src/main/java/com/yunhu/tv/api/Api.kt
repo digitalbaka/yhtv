@@ -552,12 +552,16 @@ object Api {
         val avatarUrl: String
     )
 
+    /** 一页屏蔽用户；total 为服务端返回的总条数，用于翻页终止 */
+    data class BlockedPage(val list: List<BlockedUser>, val total: Int)
+
     /** 屏蔽用户列表 */
-    suspend fun blackList(size: Int = 50, page: Int = 1): List<BlockedUser> = withContext(Dispatchers.IO) {
+    suspend fun blackList(size: Int = 50, page: Int = 1): BlockedPage = withContext(Dispatchers.IO) {
         val resp = postJson("$BASE/v1/community/black-list", JSONObject().put("size", size).put("page", page))
         if (resp.optInt("code", -1) != 1) throw ApiException(resp.optInt("code"), resp.optString("msg", "获取屏蔽列表失败"))
-        val arr = resp.optJSONObject("data")?.optJSONArray("list") ?: return@withContext emptyList()
-        (0 until arr.length()).mapNotNull { i ->
+        val data = resp.optJSONObject("data")
+        val arr = data?.optJSONArray("list")
+        val list = if (arr == null) emptyList() else (0 until arr.length()).mapNotNull { i ->
             arr.optJSONObject(i)?.let { o ->
                 BlockedUser(
                     id = o.optLong("id"),
@@ -567,6 +571,7 @@ object Api {
                 )
             }
         }
+        BlockedPage(list, data?.optInt("total", 0) ?: 0)
     }
 
     /** 屏蔽/取消屏蔽用户。isAdd: 1-屏蔽 0-取消 */
