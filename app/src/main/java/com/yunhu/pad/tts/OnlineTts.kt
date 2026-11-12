@@ -17,6 +17,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
+import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -57,18 +58,23 @@ object OnlineTts {
                 )
             )
 
-        val wavBytes = withContext(Dispatchers.IO) {
-            val req = Request.Builder()
-                .url(url)
-                .header("Authorization", "Bearer $key")
-                .post(body.toString().toRequestBody(JSON_MEDIA))
-                .build()
-            Api.client.newCall(req).execute().use { resp ->
-                // 非 2xx 也要把响应体读完，才能把服务端原因带给用户
-                val raw = resp.body?.string().orEmpty()
-                if (!resp.isSuccessful) throw IllegalStateException(httpError(resp.code, raw))
-                parseAudio(raw)
+        val wavBytes = try {
+            withContext(Dispatchers.IO) {
+                val req = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $key")
+                    .post(body.toString().toRequestBody(JSON_MEDIA))
+                    .build()
+                Api.client.newCall(req).execute().use { resp ->
+                    // 非 2xx 也要把响应体读完，才能把服务端原因带给用户
+                    val raw = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) throw IllegalStateException(httpError(resp.code, raw))
+                    parseAudio(raw)
+                }
             }
+        } catch (e: IOException) {
+            // 连接拒绝、超时、DNS 失败、连接中断等，统一带中文前缀，原始英文只放括号里
+            throw IllegalStateException(netError(e))
         }
 
         val file = File(context.cacheDir, "tts_online_audio.wav")
@@ -86,6 +92,17 @@ object OnlineTts {
         val brief = if (reason.length > 120) reason.take(120) + "…" else reason
         return if (brief.isEmpty()) "在线引擎失败（HTTP $code）"
         else "在线引擎失败（HTTP $code：$brief）"
+    }
+
+    /**
+     * 连接层异常（拒绝连接、超时、DNS 失败、连接中断）：压成一行、截前 120 字，
+     * 与 HTTP 那套保持一致；原始英文只作为括号内的细节，不整句上屏。
+     */
+    private fun netError(e: IOException): String {
+        val reason = (e.message ?: e.javaClass.simpleName).trim().replace(Regex("\\s+"), " ")
+        val brief = if (reason.length > 120) reason.take(120) + "…" else reason
+        return if (brief.isEmpty()) "在线引擎失败（网络异常）"
+        else "在线引擎失败（网络异常：$brief）"
     }
 
     /** 解析 choices[0].message.audio.data，三种失败各自可区分 */
