@@ -18,6 +18,7 @@ Thumbs.db
 # 签名文件
 *.jks
 *.keystore
+keystore.properties
 
 # 临时截图
 screen.png
