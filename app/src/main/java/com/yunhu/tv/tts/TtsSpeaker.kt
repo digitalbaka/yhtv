@@ -1,7 +1,16 @@
 package com.yunhu.tv.tts
 
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.widget.Toast
+import com.yunhu.tv.App
 import com.yunhu.tv.voice.VoicePrefs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * 朗读调度：串行朗读、长文本先切句。
@@ -29,7 +38,16 @@ object TtsSpeaker {
     private var system: SystemTtsEngine? = null
     private var online: OnlineTtsEngine? = null
     private var active: TtsEngine? = null
-    private var lastSettings: VoicePrefs.TtsSettings? = null
+    /** 记录各自引擎已应用的设置，避免在线失败回退系统时漏掉初始化 */
+    private var systemSettings: VoicePrefs.TtsSettings? = null
+    private var onlineSettings: VoicePrefs.TtsSettings? = null
+
+    /** 手动朗读（长按菜单）专用：同一时刻只念一条 */
+    private val manualScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var manualJob: Job? = null
+    private var manualKey: String? = null
+    private var manualRunning = false
+    private var manualGeneration = 0
 
     /** 朗读一段文本（自动切句后追加到队列） */
     @Synchronized
@@ -48,18 +66,107 @@ object TtsSpeaker {
         }
     }
 
+    /**
+     * 手动朗读一条消息（长按菜单）。
+     *
+     * - 不受朗读总开关限制：这是用户主动点击，开关关着也照念；
+     * - 同一条正在朗读时再次调用直接忽略，不重复合成；
+     * - 换一条时先停掉上一条，再逐句串行朗读，上一句念完才起下一句；
+     * - 引擎不可用时弹一条可见提示，不崩溃。
+     */
+    fun speakManual(key: String, text: String) {
+        val body = text.trim()
+        if (body.isEmpty()) return
+        val gen: Int
+        synchronized(this) {
+            if (manualRunning && manualKey == key) {
+                Log.i(TAG, "manual speak ignored, still speaking: $key")
+                return
+            }
+            if (manualRunning) {
+                Log.i(TAG, "manual speak switch, stop previous: $manualKey")
+                manualJob?.cancel()
+                active?.stop()
+            }
+            manualGeneration++
+            gen = manualGeneration
+            manualKey = key
+            manualRunning = true
+        }
+        Log.i(TAG, "manual speak start: $key")
+        val settings = VoicePrefs.ttsSettings
+        val engine = ensureEngine(settings)
+        val sentences = splitSentences(body)
+        manualJob = manualScope.launch {
+            try {
+                var current = engine
+                for (sentence in sentences) {
+                    if (!isCurrent(gen)) break
+                    var ok = current.speakAwait(sentence)
+                    if (!ok) {
+                        // 在线失败 / 系统不可用：切到系统引擎续读这一句
+                        if (!isCurrent(gen)) break
+                        current = ensureSystem(settings)
+                        ok = current.speakAwait(sentence)
+                    }
+                    if (!ok) {
+                        notice("无法朗读：系统没有可用的中文语音引擎，请在电视设置里安装中文语音包后重试")
+                        break
+                    }
+                }
+            } finally {
+                synchronized(this@TtsSpeaker) {
+                    if (manualGeneration == gen) {
+                        manualRunning = false
+                        manualKey = null
+                        manualJob = null
+                    }
+                }
+            }
+        }
+    }
+
+    private fun isCurrent(gen: Int): Boolean =
+        synchronized(this) { manualGeneration == gen }
+
+    private fun notice(text: String) {
+        Log.w(TAG, text)
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            Toast.makeText(App.instance, text, Toast.LENGTH_SHORT).show()
+        } else {
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(App.instance, text, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     /** 停止朗读（例如退出聊天页），不释放引擎 */
     fun stop() {
+        synchronized(this) {
+            manualGeneration++
+            manualJob?.cancel()
+            manualJob = null
+            manualKey = null
+            manualRunning = false
+        }
         active?.stop()
     }
 
     fun release() {
+        synchronized(this) {
+            manualGeneration++
+            manualJob?.cancel()
+            manualJob = null
+            manualKey = null
+            manualRunning = false
+        }
         online?.release()
         system?.release()
         online = null
         system = null
         active = null
-        lastSettings = null
+        systemSettings = null
+        onlineSettings = null
     }
 
     /** 在线引擎失败时由 [OnlineTtsEngine] 回调：回退系统引擎并补读失败的那句 */
@@ -77,7 +184,7 @@ object TtsSpeaker {
     private fun ensureEngine(settings: VoicePrefs.TtsSettings): TtsEngine {
         if (settings.engine == "online" && VoicePrefs.isTtsOnlineReady(settings)) {
             val o = online
-            if (o != null && lastSettings == settings) {
+            if (o != null && onlineSettings == settings) {
                 active = o
                 currentEngineLabel = o.id
                 return o
@@ -87,7 +194,7 @@ object TtsSpeaker {
             online = created
             active = created
             currentEngineLabel = created.id
-            lastSettings = settings
+            onlineSettings = settings
             return created
         }
         return ensureSystem(settings)
@@ -95,14 +202,14 @@ object TtsSpeaker {
 
     private fun ensureSystem(settings: VoicePrefs.TtsSettings): TtsEngine {
         val s = system ?: SystemTtsEngine().also { system = it }
-        if (lastSettings != settings) {
+        if (systemSettings != settings) {
             s.prepare(settings.voice, settings.rate) { ok ->
                 if (!ok) {
                     currentEngineLabel = "${SystemTtsEngine.ID}（引擎不可用）"
                     onEngineChanged?.invoke(currentEngineLabel)
                 }
             }
-            lastSettings = settings
+            systemSettings = settings
         }
         active = s
         currentEngineLabel = SystemTtsEngine.ID

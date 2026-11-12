@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -14,6 +15,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
 
 /**
  * 在线 TTS（OpenAI 兼容 /audio/speech）——可选项。
@@ -51,6 +53,60 @@ class OnlineTtsEngine(
         }
         return true
     }
+
+    /**
+     * 手动朗读用：合成一句、播完再返回，保证上一段没念完不起下一段。
+     * 失败时只回报 false，由 [TtsSpeaker] 切到系统引擎续读，避免重复朗读。
+     */
+    override suspend fun speakAwait(text: String): Boolean {
+        if (stopped.get()) return false
+        return try {
+            val bytes = synthesize(text)
+            if (stopped.get()) return false
+            withContext(Dispatchers.Main) { playAwait(bytes) }
+        } catch (e: Exception) {
+            TtsSpeaker.onOnlineFailure("", e.message ?: e.javaClass.simpleName)
+            false
+        }
+    }
+
+    private suspend fun playAwait(bytes: ByteArray): Boolean =
+        suspendCancellableCoroutine { cont ->
+            runCatching {
+                player?.release()
+                val f = File.createTempFile("tts-", ".mp3", com.yunhu.tv.App.instance.cacheDir)
+                f.writeBytes(bytes)
+                f.deleteOnExit()
+                val mp = MediaPlayer()
+                player = mp
+                mp.setDataSource(f.absolutePath)
+                mp.setOnCompletionListener {
+                    it.release()
+                    if (player === it) player = null
+                    f.delete()
+                    if (cont.isActive) runCatching { cont.resume(true) }
+                }
+                mp.setOnErrorListener { it, _, _ ->
+                    it.release()
+                    if (player === it) player = null
+                    f.delete()
+                    if (cont.isActive) runCatching { cont.resume(false) }
+                    true
+                }
+                mp.prepare()
+                mp.start()
+            }.onFailure {
+                TtsSpeaker.onOnlineFailure("", it.message ?: "播放失败")
+                if (cont.isActive) runCatching { cont.resume(false) }
+            }
+            cont.invokeOnCancellation {
+                runCatching {
+                    player?.stop()
+                    player?.release()
+                }
+                player = null
+            }
+        }
 
     private fun synthesize(text: String): ByteArray {
         val payload = JSONObject()

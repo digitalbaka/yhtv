@@ -19,6 +19,12 @@ interface TtsEngine {
     /** 追加一句到朗读队列；返回 false 表示当前引擎不可用 */
     fun speak(text: String): Boolean
 
+    /**
+     * 追加一句并等待读完；返回 false 表示这一句没能念出来。
+     * 默认实现退化为 [speak]（不等待），系统 TTS 与在线 TTS 各自覆盖为真正串行。
+     */
+    suspend fun speakAwait(text: String): Boolean = speak(text)
+
     fun stop()
 
     fun release()

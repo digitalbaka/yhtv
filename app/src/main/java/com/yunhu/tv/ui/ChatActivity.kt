@@ -485,6 +485,16 @@ class ChatActivity : AppCompatActivity(), VoiceResultSink.Receiver {
         if (canRecall) {
             actions.add("撤回" to { recallMsg(m) })
         }
+        // 朗读消息（手动朗读）：只念当前这一条，不受朗读总开关限制；
+        // 图片 / 文件 / 语音 / 卡片等非文字消息不出现，避免点了才发现没文字
+        val isTextMsg = m.contentType == ContentType.TEXT ||
+            m.contentType == ContentType.MARKDOWN || m.contentType == ContentType.HTML
+        if (isTextMsg && m.content.text.isNotEmpty()) {
+            actions.add("朗读消息" to {
+                val key = m.msgId.ifEmpty { "local-${System.identityHashCode(m)}" }
+                TtsSpeaker.speakManual(key, speechTextOf(m))
+            })
+        }
         if (actions.isEmpty()) return
         AlertDialog.Builder(this)
             .setTitle("消息操作")
