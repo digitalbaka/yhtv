@@ -5,7 +5,9 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.Locale
+import kotlin.coroutines.resume
 
 /**
  * 系统原生 TTS 封装。
@@ -20,6 +22,8 @@ class SystemTts(private val context: Context) {
     private var tts: TextToSpeech? = null
     private var initializing = false
     private val pending = mutableListOf<(Availability) -> Unit>()
+    /** speakAwait 的完成回调，读完/出错时触发，用于逐段串行朗读 */
+    private var doneCallback: (() -> Unit)? = null
 
     @Volatile
     var availability: Availability = Availability.UNKNOWN
@@ -57,14 +61,22 @@ class SystemTts(private val context: Context) {
             tts?.setSpeechRate(TtsConfig.ratePercent / 100f)
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
-                override fun onDone(utteranceId: String?) {}
+                override fun onDone(utteranceId: String?) {
+                    finishUtterance()
+                }
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
                     onSpeakError?.invoke("系统朗读失败")
+                    finishUtterance()
                 }
 
                 override fun onError(utteranceId: String?, errorCode: Int) {
                     onSpeakError?.invoke("系统朗读失败")
+                    finishUtterance()
+                }
+
+                override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                    finishUtterance()
                 }
             })
         }
@@ -100,6 +112,24 @@ class SystemTts(private val context: Context) {
         } catch (e: Exception) {
             false
         }
+    }
+
+    /** 朗读并挂起到读完/出错（长按朗读逐段串行用）；返回是否已交给引擎 */
+    suspend fun speakAwait(text: String, ratePercent: Int): Boolean =
+        suspendCancellableCoroutine { cont ->
+            doneCallback = { if (cont.isActive) cont.resume(true) }
+            if (!speak(text, ratePercent)) {
+                doneCallback = null
+                cont.resume(false)
+                return@suspendCancellableCoroutine
+            }
+            cont.invokeOnCancellation { doneCallback = null }
+        }
+
+    private fun finishUtterance() {
+        val callback = doneCallback
+        doneCallback = null
+        callback?.invoke()
     }
 
     fun stop() {

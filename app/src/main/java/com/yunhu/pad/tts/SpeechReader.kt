@@ -6,10 +6,13 @@ import com.yunhu.pad.api.ChatMsg
 import com.yunhu.pad.api.ContentType
 import com.yunhu.pad.api.WsClient
 import com.yunhu.pad.util.Session
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 /**
  * 消息朗读调度。
@@ -53,6 +56,71 @@ object SpeechReader {
     fun speakNow(text: String) {
         if (text.isBlank()) return
         speak(text.trim())
+    }
+
+    /**
+     * 长按朗读：按句切分后逐段串行朗读，上一段读完才起下一段。
+     * 与 speakNow 共用同一套在线/系统降级链，不改 speakNow 与 handlePush 的行为。
+     */
+    suspend fun speakMessageAwait(text: String) {
+        if (text.isBlank()) return
+        SentenceSplitter.split(text).forEach { segment ->
+            speakSegmentAndWait(segment)
+        }
+    }
+
+    /** 停止当前朗读（在线播放与系统朗读都停；调用点负责取消逐段串行的协程） */
+    fun stop() {
+        OnlineTts.stop()
+        if (::systemTts.isInitialized) systemTts.stop()
+    }
+
+    private suspend fun speakSegmentAndWait(text: String) {
+        val app = App.instance
+        val rate = TtsConfig.ratePercent
+        if (TtsConfig.onlineConfigured(app)) {
+            try {
+                OnlineTts.speak(app, text, rate)
+                return
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                speakWithSystemAwait(app, text, rate, onlineError = e.message ?: "在线引擎失败")
+                return
+            }
+        }
+        speakWithSystemAwait(app, text, rate, onlineError = null)
+    }
+
+    /** 系统 TTS 的串行版本：等到这一段读完/出错才返回，保证句与句不重叠 */
+    private suspend fun speakWithSystemAwait(app: App, text: String, rate: Int, onlineError: String?) {
+        if (!::systemTts.isInitialized) {
+            systemTts = SystemTts(app)
+            systemTts.onSpeakError = { showToast(it) }
+        }
+        val availability = suspendCancellableCoroutine<SystemTts.Availability> { cont ->
+            systemTts.check { if (cont.isActive) cont.resume(it) }
+        }
+        when (availability) {
+            SystemTts.Availability.READY -> {
+                if (!systemTts.speakAwait(text, rate)) {
+                    warn("系统朗读启动失败，请检查系统语音设置")
+                }
+            }
+            SystemTts.Availability.NO_ZH_ENGINE -> {
+                warn(
+                    if (onlineError != null) "$onlineError，且本机缺少中文语音引擎，无法朗读"
+                    else "当前设备缺少中文语音引擎，中文消息无法朗读；可在设置中配置在线 TTS 引擎"
+                )
+            }
+            SystemTts.Availability.INIT_FAILED -> {
+                warn(
+                    if (onlineError != null) "$onlineError，且系统语音初始化失败，无法朗读"
+                    else "系统语音初始化失败，无法朗读；可在设置中配置在线 TTS 引擎"
+                )
+            }
+            SystemTts.Availability.UNKNOWN -> {}
+        }
     }
 
     private fun handlePush(msg: ChatMsg) {

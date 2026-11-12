@@ -34,11 +34,13 @@ import com.yunhu.pad.api.Sender
 import com.yunhu.pad.api.StreamMsg
 import com.yunhu.pad.api.WsClient
 import com.yunhu.pad.databinding.ActivityChatBinding
+import com.yunhu.pad.tts.SpeechReader
 import com.yunhu.pad.util.MediaPrep
 import com.yunhu.pad.util.Prefs
 import com.yunhu.pad.util.Session
 import com.yunhu.pad.util.YunhuRouter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -70,6 +72,10 @@ class ChatActivity : AppCompatActivity() {
     private var loadingOlder = false
     private var hasMore = true
     private var stickersLoaded = false
+
+    // 长按朗读：记录当前正在朗读的消息，用于同一条去重和换条时先停
+    private var readingMsgKey: String? = null
+    private var readingJob: Job? = null
 
     // ---------- 媒体发送 ----------
 
@@ -140,6 +146,7 @@ class ChatActivity : AppCompatActivity() {
         val pendingVoice = recordFile
         stopRecorder()
         pendingVoice?.delete()
+        SpeechReader.stop()
         App.wsClient.removeListener(wsListener)
         super.onDestroy()
     }
@@ -713,12 +720,37 @@ class ChatActivity : AppCompatActivity() {
         if (MessageAdapter.isOwn(m) && m.msgId.isNotEmpty()) {
             actions.add("删除" to { confirmDeleteMessage(m) })
         }
+        // 朗读消息：只念被长按的这一条，出现条件与「复制文字」一致
+        if (m.content.text.isNotEmpty()) {
+            actions.add("朗读消息" to { readMessageAloud(m) })
+        }
         actions.add("举报会话" to { showReportChat(m) })
         if (actions.isEmpty()) return
         AlertDialog.Builder(this)
             .setTitle("消息操作")
             .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second.invoke() }
             .show()
+    }
+
+    /**
+     * 朗读被长按的这一条消息。
+     * 去重和停止放在调用点：同一条正在念就忽略；换一条先停掉上一条，再按句串行朗读。
+     */
+    private fun readMessageAloud(m: ChatMsg) {
+        val text = m.content.text.trim()
+        if (text.isEmpty()) return
+        val key = m.msgId.ifEmpty { text }
+        if (key == readingMsgKey && readingJob?.isActive == true) return
+        SpeechReader.stop()
+        readingJob?.cancel()
+        readingMsgKey = key
+        readingJob = lifecycleScope.launch {
+            try {
+                SpeechReader.speakMessageAwait(text)
+            } finally {
+                if (readingMsgKey == key) readingMsgKey = null
+            }
+        }
     }
 
     /** +1：把这条消息原样发送到当前会话 */
