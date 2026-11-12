@@ -3,6 +3,7 @@ package com.yunhu.tv.ui
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.yunhu.tv.databinding.ActivityTtsSettingsBinding
 import com.yunhu.tv.tts.TtsSpeaker
@@ -26,6 +27,10 @@ class TtsSettingsActivity : AppCompatActivity() {
     private var voiceIndex = -1
     private var systemVoices: List<String> = emptyList()
 
+    /** 上次读到的引擎状态，用来判断扫码回来后是否发生了「切到在线」 */
+    private var knownEngine = "system"
+    private var knownReady = false
+
     private var probe: TextToSpeech? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,6 +51,8 @@ class TtsSettingsActivity : AppCompatActivity() {
             binding.btnRate15,
             binding.btnEngineSystem,
             binding.btnEngineOnline,
+            binding.btnTtsScan,
+            binding.btnTtsClear,
             binding.btnSave,
             binding.btnPreview,
             binding.btnBack
@@ -72,6 +79,10 @@ class TtsSettingsActivity : AppCompatActivity() {
             engine = "online"
             renderEngine()
         }
+        binding.btnTtsScan.setOnClickListener {
+            startActivity(android.content.Intent(this, TtsQrActivity::class.java))
+        }
+        binding.btnTtsClear.setOnClickListener { confirmClearOnline() }
         binding.btnSave.setOnClickListener { save(showToast = true) }
         binding.btnPreview.setOnClickListener {
             save(showToast = false)
@@ -87,7 +98,17 @@ class TtsSettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 从扫码页回来时重新读取配置，回显扫码结果（key 只显示已配置/未配置）
+        val prevEngine = knownEngine
+        val prevReady = knownReady
+        load()
+        val s = VoicePrefs.ttsSettings
         binding.tvEngine.text = "当前引擎：${TtsSpeaker.currentEngineLabel}"
+        if (s.engine == "online" && (!prevReady || s.engine != prevEngine) &&
+            VoicePrefs.isTtsOnlineReady(s)
+        ) {
+            binding.tvHint.text = "已切换到在线引擎"
+        }
     }
 
     override fun onDestroy() {
@@ -117,6 +138,10 @@ class TtsSettingsActivity : AppCompatActivity() {
         renderScope()
         renderRate()
         renderEngine()
+        binding.tvTtsKeyState.text =
+            if (s.token.isNotEmpty()) "在线 TTS 密钥：已配置" else "在线 TTS 密钥：未配置"
+        knownEngine = s.engine
+        knownReady = VoicePrefs.isTtsOnlineReady(s)
     }
 
     private fun renderToggle() {
@@ -228,6 +253,8 @@ class TtsSettingsActivity : AppCompatActivity() {
         )
         VoicePrefs.ttsSettings = saved
         binding.etTtsToken.setText("")
+        binding.tvTtsKeyState.text =
+            if (saved.token.isNotEmpty()) "在线 TTS 密钥：已配置" else "在线 TTS 密钥：未配置"
         binding.tvHint.text = buildString {
             append(if (saved.enabled) "已保存，朗读已开启" else "已保存，朗读仍是关闭状态")
             if (saved.engine == "online" && !VoicePrefs.isTtsOnlineReady(saved)) {
@@ -236,5 +263,26 @@ class TtsSettingsActivity : AppCompatActivity() {
         }
         binding.tvEngine.text = "当前引擎：${TtsSpeaker.currentEngineLabel}"
         if (showToast) Toast.makeText(this, "朗读设置已保存", Toast.LENGTH_SHORT).show()
+    }
+
+    /** 清除在线配置：只清 baseUrl / 模型 / key，当前引擎选择保持不动 */
+    private fun confirmClearOnline() {
+        val s = VoicePrefs.ttsSettings
+        if (s.baseUrl.isEmpty() && s.model.isEmpty() && s.token.isEmpty()) {
+            Toast.makeText(this, "在线配置未填写", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("清除在线配置")
+            .setMessage("将清空在线 TTS 的 baseUrl、模型名和已保存的 key；当前引擎选择不会改变。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("清除") { _, _ ->
+                val cur = VoicePrefs.ttsSettings
+                VoicePrefs.ttsSettings = cur.copy(baseUrl = "", model = "", token = "")
+                load()
+                binding.tvHint.text = "在线配置已清除"
+                Toast.makeText(this, "在线配置已清除", Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 }

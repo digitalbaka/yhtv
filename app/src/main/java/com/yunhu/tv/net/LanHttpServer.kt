@@ -89,16 +89,29 @@ class LanHttpServer(
     private var listener: Listener? = null
     private val stopped = AtomicBoolean(false)
 
-    fun start(preferredPort: Int, onStopped: Listener? = null): Boolean {
+    /**
+     * @param bindHost 指定绑定的本机地址（如局域网 IPv4）；为空时沿用原来的 0.0.0.0。
+     *                 指定地址绑不上时退回 0.0.0.0，仍由 [isLanAddress] 拦截非局域网来源。
+     */
+    fun start(
+        preferredPort: Int,
+        onStopped: Listener? = null,
+        bindHost: String? = null
+    ): Boolean {
         if (isRunning) return true
         listener = onStopped
         stopped.set(false)
-        val server = bind(preferredPort) ?: bind(0) ?: return false
-        socket = server
-        port = server.localPort
+        var server = bind(bindHost, preferredPort) ?: bind(bindHost, 0)
+        if (server == null && bindHost != null) {
+            Log.i(TAG, "bind $bindHost failed, fallback to 0.0.0.0")
+            server = bind(null, preferredPort) ?: bind(null, 0)
+        }
+        val bound = server ?: return false
+        socket = bound
+        port = bound.localPort
         isRunning = true
         Log.i(TAG, "lan server started for /$prefix on port $port")
-        Thread({ acceptLoop(server) }, "lan-$prefix").apply { isDaemon = true }.start()
+        Thread({ acceptLoop(bound) }, "lan-$prefix").apply { isDaemon = true }.start()
         return true
     }
 
@@ -115,11 +128,13 @@ class LanHttpServer(
         }
     }
 
-    private fun bind(port: Int): ServerSocket? = try {
+    private fun bind(host: String?, port: Int): ServerSocket? = try {
         ServerSocket().apply {
             reuseAddress = true
             soTimeout = ACCEPT_TIMEOUT_MS
-            bind(InetSocketAddress(port), 8)
+            val address = if (host.isNullOrEmpty()) InetSocketAddress(port)
+            else InetSocketAddress(InetAddress.getByName(host), port)
+            bind(address, 8)
         }
     } catch (_: Exception) {
         null

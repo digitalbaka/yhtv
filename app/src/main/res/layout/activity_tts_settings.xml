@@ -246,6 +246,41 @@
                     android:textSize="16sp" />
             </LinearLayout>
 
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btn_tts_scan"
+                    android:layout_width="180dp"
+                    android:layout_height="52dp"
+                    android:background="@drawable/bg_button_focus"
+                    android:text="扫码填写"
+                    android:textColor="@color/white"
+                    android:textSize="18sp" />
+
+                <Button
+                    android:id="@+id/btn_tts_clear"
+                    android:layout_width="220dp"
+                    android:layout_height="52dp"
+                    android:layout_marginStart="14dp"
+                    android:background="@drawable/bg_button_focus"
+                    android:text="清除在线配置"
+                    android:textColor="@color/white"
+                    android:textSize="18sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tv_tts_key_state"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="在线 TTS 密钥：未配置"
+                android:textColor="@color/text_secondary"
+                android:textSize="15sp" />
+
             <EditText
                 android:id="@+id/et_tts_base_url"
                 android:layout_width="match_parent"
