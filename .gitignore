@@ -21,6 +21,9 @@ Thumbs.db
 
 # 临时截图
 screen.png
+# 验收截图（二维码含一次性口令，禁止入库）
+tts_config_qr.png
+tts_config_qr*.png
 
 # 发版构建产物（不入库，本地保留）
 app/release/app-release.apk

@@ -5,6 +5,8 @@ import androidx.appcompat.app.AppCompatDelegate
 import coil.Coil
 import coil.ImageLoader
 import com.yunhu.pad.api.WsClient
+import com.yunhu.pad.tts.SpeechReader
+import com.yunhu.pad.tts.TtsConfig
 import com.yunhu.pad.util.Prefs
 import com.yunhu.pad.util.Session
 import okhttp3.OkHttpClient
@@ -33,6 +35,8 @@ class App : Application() {
         instance = this
         Session.init(this)
         Prefs.init(this)
+        TtsConfig.init(this)
+        SpeechReader.attach(this)
         applyNightMode()
         initImageLoader()
         rebuildImageLoader()

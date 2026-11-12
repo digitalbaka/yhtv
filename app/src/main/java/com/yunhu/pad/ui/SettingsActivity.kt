@@ -20,6 +20,9 @@ import com.yunhu.pad.R
 import com.yunhu.pad.api.Api
 import com.yunhu.pad.api.Qiniu
 import com.yunhu.pad.databinding.ActivitySettingsBinding
+import com.yunhu.pad.tts.SpeechReader
+import com.yunhu.pad.tts.SystemTts
+import com.yunhu.pad.tts.TtsConfig
 import com.yunhu.pad.util.MediaPrep
 import com.yunhu.pad.util.Prefs
 import com.yunhu.pad.util.Session
@@ -73,10 +76,19 @@ class SettingsActivity : AppCompatActivity() {
         binding.btnPickBg.setOnClickListener { pickBackground.launch("image/*") }
         binding.btnResetBg.setOnClickListener { resetBackground() }
 
+        initTts()
+
         renderTheme()
         renderBackground()
         renderDevice()
         loadSelf()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 从在线配置页返回后刷新状态
+        renderOnlineState()
+        renderTtsState()
     }
 
     // ---------- 账号 ----------
@@ -331,6 +343,133 @@ class SettingsActivity : AppCompatActivity() {
         Prefs.chatBackgroundPath = ""
         renderBackground()
         toast("已恢复默认背景")
+    }
+
+    // ---------- 朗读 ----------
+
+    private var ttsWarnShown = false
+
+    /**
+     * 朗读设置：开关、范围、语速、在线引擎配置入口、测试朗读。
+     * 系统朗读能力查询是异步的，查询失败或缺少中文语音时必须显式提示，不能静默。
+     */
+    private fun initTts() {
+        binding.switchTtsRead.isChecked = TtsConfig.readEnabled
+        binding.switchTtsRead.setOnCheckedChangeListener { _, checked ->
+            TtsConfig.readEnabled = checked
+            renderTtsState()
+        }
+
+        binding.sbTtsRate.progress = (TtsConfig.ratePercent - 50).coerceIn(0, 150)
+        renderRate()
+        binding.sbTtsRate.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    TtsConfig.ratePercent = 50 + progress
+                    renderRate()
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+        })
+
+        binding.btnTtsScopeAll.setOnClickListener {
+            TtsConfig.scope = TtsConfig.SCOPE_ALL
+            renderScope()
+        }
+        binding.btnTtsScopeMention.setOnClickListener {
+            TtsConfig.scope = TtsConfig.SCOPE_MENTION
+            renderScope()
+        }
+        binding.btnTtsOnline.setOnClickListener {
+            startActivity(Intent(this, TtsKeySetupActivity::class.java))
+        }
+        binding.btnTtsClearOnline.setOnClickListener { confirmClearOnline() }
+        binding.btnTtsTest.setOnClickListener {
+            SpeechReader.speakNow("这是一条朗读测试，用来确认设备能否正常朗读中文。")
+        }
+
+        renderScope()
+        renderTtsState()
+        renderOnlineState()
+    }
+
+    private fun renderScope() {
+        val isAll = TtsConfig.scope == TtsConfig.SCOPE_ALL
+        val accent = ContextCompat.getColor(this, R.color.accent)
+        val normal = ContextCompat.getColor(this, R.color.text_primary)
+        binding.btnTtsScopeAll.isSelected = isAll
+        binding.btnTtsScopeMention.isSelected = !isAll
+        binding.btnTtsScopeAll.setTextColor(if (isAll) accent else normal)
+        binding.btnTtsScopeMention.setTextColor(if (isAll) normal else accent)
+    }
+
+    private fun renderRate() {
+        binding.tvTtsRate.text = String.format(java.util.Locale.US, "%.1fx", TtsConfig.ratePercent / 100f)
+    }
+
+    private fun renderTtsState() {
+        if (!TtsConfig.readEnabled) {
+            binding.tvTtsState.text = "未开启消息朗读"
+            binding.tvTtsState.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+            return
+        }
+        binding.tvTtsState.text = "正在检查系统语音…"
+        binding.tvTtsState.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+        SpeechReader.checkSystemAvailability { availability ->
+            when (availability) {
+                SystemTts.Availability.READY -> {
+                    binding.tvTtsState.text = "系统朗读可用"
+                    binding.tvTtsState.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+                }
+                SystemTts.Availability.NO_ZH_ENGINE -> {
+                    binding.tvTtsState.text = "当前设备缺少中文语音引擎，中文消息无法朗读；可配置在线 TTS 引擎"
+                    binding.tvTtsState.setTextColor(ContextCompat.getColor(this, R.color.danger))
+                    if (!ttsWarnShown) {
+                        ttsWarnShown = true
+                        toast("当前设备缺少中文语音引擎，中文消息无法朗读")
+                    }
+                }
+                SystemTts.Availability.INIT_FAILED -> {
+                    binding.tvTtsState.text = "系统语音初始化失败，可配置在线 TTS 引擎"
+                    binding.tvTtsState.setTextColor(ContextCompat.getColor(this, R.color.danger))
+                    if (!ttsWarnShown) {
+                        ttsWarnShown = true
+                        toast("系统语音初始化失败，无法朗读")
+                    }
+                }
+                SystemTts.Availability.UNKNOWN -> {
+                    binding.tvTtsState.text = "正在检查系统语音…"
+                }
+            }
+        }
+    }
+
+    private fun renderOnlineState() {
+        binding.tvTtsOnlineState.text = if (TtsConfig.onlineConfigured(this)) {
+            "在线引擎：已配置（${TtsConfig.model}）"
+        } else {
+            "在线引擎：未配置"
+        }
+    }
+
+    /** 清除在线配置：baseUrl、模型、voice、加密 key 一起清，并删除 AndroidKeyStore 里的密钥 */
+    private fun confirmClearOnline() {
+        if (!TtsConfig.onlineConfigured(this)) {
+            toast("在线引擎未配置")
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("清除在线配置")
+            .setMessage("将删除 baseUrl、模型、voice 和已加密保存的 key，清除后需要重新配置。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("清除") { _, _ ->
+                TtsConfig.clearOnline(this)
+                renderOnlineState()
+                toast("在线配置已清除")
+            }
+            .show()
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()

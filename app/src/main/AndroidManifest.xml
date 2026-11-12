@@ -60,6 +60,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ui.TtsKeySetupActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.PostDetailActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
