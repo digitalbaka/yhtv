@@ -3,7 +3,6 @@ package com.yunhu.tv.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
-import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
@@ -35,14 +34,15 @@ class SettingsActivity : AppCompatActivity() {
     private var lastFocusId = 0
 
     private val rows by lazy {
-        listOf(
+        listOfNotNull(
             binding.rowProfile,
             binding.rowCopyId,
             binding.rowVoiceSettings,
             binding.rowMicLink,
             binding.rowTts,
             binding.rowClearCache,
-            binding.rowVoiceDebug,
+            // 调试行只在 debug 布局里存在，release 下为 null，直接跳过
+            findViewById<View>(R.id.row_voice_debug),
             binding.rowLogout
         )
     }
@@ -51,10 +51,6 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
-        val debuggable = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-        binding.headerDebug.visibility = if (debuggable) View.VISIBLE else View.GONE
-        binding.rowVoiceDebug.visibility = if (debuggable) View.VISIBLE else View.GONE
 
         binding.tvCopySub.text = Session.userId
 
@@ -84,7 +80,7 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this, TtsSettingsActivity::class.java))
         }
         binding.rowClearCache.setOnClickListener { confirmClearCache() }
-        binding.rowVoiceDebug.setOnClickListener {
+        findViewById<View>(R.id.row_voice_debug)?.setOnClickListener {
             startActivity(Intent(this, VoiceDebugPanelActivity::class.java))
         }
         binding.rowLogout.setOnClickListener { confirmLogout() }

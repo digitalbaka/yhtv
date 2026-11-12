@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 调试组 id 声明：release 布局里没有这些节点，靠这里保住 R.id 可编译 -->
+    <item name="header_debug" type="id" />
+    <item name="row_voice_debug" type="id" />
+</resources>

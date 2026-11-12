@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- release 占位：不含任何调试节点，保证该组在正式包里根本不生成 -->
+<merge xmlns:android="http://schemas.android.com/apk/res/android" />
